@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+	<comment>IK Analyzer 扩展配置 - 医疗健康助手定制</comment>
+	<!-- 自定义扩展词典 -->
+	<entry key="ext_dict">additions_medical.dic</entry>
+	<!-- 自定义扩展停止词词典 -->
+	<entry key="ext_stopwords">stopwords_medical.dic</entry>
+</properties>

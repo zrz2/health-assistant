@@ -1,12 +1,12 @@
 spring:
   application:
     name: health-assistant
-  profiles:
-    active: dev
+  main:
+    allow-bean-definition-overriding: true
 
   # MySQL 业务数据
   datasource:
-    url: jdbc:mysql://localhost:3306/health_assistant?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/health_assistant?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:}
     hikari:
@@ -45,7 +45,7 @@ spring:
       cache-null-values: false
       key-prefix: "ha:cache:"
 
-  # DashScope（Spring AI Alibaba 自动配置）
+  # Spring AI（DashScope + Elasticsearch VectorStore）
   ai:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
@@ -59,17 +59,6 @@ spring:
         enabled: true
         options:
           model: text-embedding-v3
-
-  # Elasticsearch
-  elasticsearch:
-    uris: ${ES_URIS:localhost:9200}
-    username: ${ES_USERNAME:}
-    password: ${ES_PASSWORD:}
-    connection-timeout: 5s
-    socket-timeout: 30s
-
-  # Spring AI Elasticsearch VectorStore
-  ai:
     vectorstore:
       elasticsearch:
         index-name: health_knowledge
@@ -77,11 +66,22 @@ spring:
         similarity: cosine
         initialize-schema: true
 
+  # Elasticsearch 连接
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+    username: ${ES_USERNAME:}
+    password: ${ES_PASSWORD:}
+    connection-timeout: 5s
+    socket-timeout: 30s
+
 # 应用自定义配置
 app:
   chat:
     max-history: 10
-    stream-timeout: 30000
+    stream-timeout: 120000
+  rag:
+    enabled: true  # Phase 2: RAG 检索增强生成
+    top-k: 5
   evidence:
     weights:
       source: 0.5
@@ -89,13 +89,32 @@ app:
       type: 0.2
   security:
     jwt:
-      secret: ${JWT_SECRET:health-assistant-default-secret-change-in-production}
+      secret: ${JWT_SECRET}
       expiration: 7200000
       refresh-expiration: 604800000
   crawler:
     enable-scheduled: false
     max-depth: 3
     request-interval: 2000
+
+  # 数据抓取模块 — 从 WHO、CDC、丁香医生等自动导入健康知识
+  scraper:
+    enabled: true
+    sources:
+      who:
+        enabled: true
+        max-articles: 10
+      cdc:
+        enabled: true
+        max-articles: 10
+      dingxiang:
+        enabled: true
+        max-articles: 8
+    # 证据分级（基于来源自动标注）
+    evidence-defaults:
+      WHO: 5
+      中国疾控中心: 4
+      丁香医生: 2
 
 # SpringDoc
 springdoc:

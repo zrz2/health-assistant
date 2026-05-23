@@ -30,6 +30,7 @@ Thumbs.db
 
 # Application
 src/main/resources/application-local.yml
+src/main/resources/application-dev.yml
 
 # AI / Python (if any)
 __pycache__/

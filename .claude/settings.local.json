@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(gh auth *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(mvn spring-boot:run -Dspring-boot.run.profiles=dev -Dspring-boot.run.arguments=\"--server.port=8080\")",
+      "Bash(mvn spring-boot:run -Dspring-boot.run.profiles=dev)",
+      "Bash(curl -s http://localhost:8080/api/v1/chat/suggested-questions)",
+      "Bash(curl *)",
+      "Bash(mvn spring-boot:run -q)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('App running:', d.get\\('code'\\)==200\\)\")",
+      "Bash(python *)",
+      "Bash(mvn compile *)",
+      "Bash(npm install *)",
+      "Bash(npx vue-tsc *)",
+      "Bash(npx vite *)",
+      "Bash(date +%s)",
+      "Bash(echo 'Username: __TRACKED_VAR__')",
+      "Bash(mysql *)",
+      "Bash(C:/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe *)"
+    ]
+  }
+}
