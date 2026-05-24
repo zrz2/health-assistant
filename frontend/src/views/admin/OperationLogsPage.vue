@@ -61,7 +61,7 @@ const dateRange = ref('')
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getOperationLogs({ page: page.value, size: size.value, keyword: keyword.value })
+    const res = await getOperationLogs({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
       logs.value = res.data?.content || []
       total.value = res.data?.totalElements || 0

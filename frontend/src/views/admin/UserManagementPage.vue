@@ -64,7 +64,7 @@ const keyword = ref('')
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getUsers({ page: page.value, size: size.value, keyword: keyword.value })
+    const res = await getUsers({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
       users.value = res.data?.content || []
       total.value = res.data?.totalElements || 0

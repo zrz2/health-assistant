@@ -153,7 +153,7 @@ function onSelectionChange(val: KnowledgeItem[]) {
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getKnowledgeItems({ page: page.value, size: size.value, keyword: keyword.value })
+    const res = await getKnowledgeItems({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
       items.value = res.data?.content || []
       total.value = res.data?.totalElements || 0
