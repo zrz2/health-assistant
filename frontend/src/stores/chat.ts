@@ -20,8 +20,8 @@ export const useChatStore = defineStore('chat', () => {
   const streamingContent = ref('')
   const suggestedQuestions = ref<string[]>([])
 
-  let abortController: AbortController | null = null
-  let streamingSessionId: string | null = null
+  // Cache messages per session so background streams can write without affecting display
+  const messageCache = new Map<string, ChatMessage[]>()
 
   const currentSession = computed(() =>
     sessions.value.find((s) => s.sessionId === currentSessionId.value)
@@ -50,8 +50,8 @@ export const useChatStore = defineStore('chat', () => {
     try {
       await deleteSession(sessionId)
       sessions.value = sessions.value.filter((s) => s.sessionId !== sessionId)
+      messageCache.delete(sessionId)
       if (currentSessionId.value === sessionId) {
-        cancelStreaming()
         currentSessionId.value = null
         messages.value = []
       }
@@ -63,32 +63,46 @@ export const useChatStore = defineStore('chat', () => {
   async function loadMessages(sessionId: string) {
     try {
       const res = await getMessages(sessionId)
-      messages.value = res.data || []
+      const list = res.data || []
+      messageCache.set(sessionId, list)
+      if (currentSessionId.value === sessionId) {
+        messages.value = list
+      }
     } catch {
-      messages.value = []
+      if (currentSessionId.value === sessionId) {
+        messages.value = []
+      }
     }
   }
 
   function setSession(sessionId: string) {
-    cancelStreaming()
+    if (currentSessionId.value === sessionId) return
+
+    // Save current messages to cache
+    if (currentSessionId.value) {
+      messageCache.set(currentSessionId.value, [...messages.value])
+    }
+
     currentSessionId.value = sessionId
-    loadMessages(sessionId)
+    isStreaming.value = false
+    streamingContent.value = ''
+
+    // Restore from cache or load from server
+    const cached = messageCache.get(sessionId)
+    if (cached) {
+      messages.value = cached
+    } else {
+      messages.value = []
+      loadMessages(sessionId)
+    }
   }
 
   function newSession() {
-    cancelStreaming()
+    if (currentSessionId.value) {
+      messageCache.set(currentSessionId.value, [...messages.value])
+    }
     currentSessionId.value = null
     messages.value = []
-  }
-
-  function cancelStreaming() {
-    if (abortController) {
-      abortController.abort()
-      abortController = null
-    }
-    isStreaming.value = false
-    streamingContent.value = ''
-    streamingSessionId = null
   }
 
   function addUserMessage(content: string) {
@@ -113,21 +127,27 @@ export const useChatStore = defineStore('chat', () => {
     return placeholder.messageId
   }
 
-  function updateStreamingContent(content: string) {
-    streamingContent.value = content
-    const last = messages.value[messages.value.length - 1]
+  function updateStreamingContent(content: string, sessionId?: string) {
+    if (!sessionId || sessionId === currentSessionId.value) {
+      streamingContent.value = content
+    }
+    const target = targetMessages(sessionId)
+    const last = target[target.length - 1]
     if (last && last.messageType === 2) {
       last.content = content
     }
   }
 
-  function finalizeMessage(messageId: string, data: Partial<ChatMessage>) {
-    const msg = messages.value.find((m) => m.messageId === messageId)
+  function finalizeMessage(messageId: string, data: Partial<ChatMessage>, sessionId?: string) {
+    const target = targetMessages(sessionId)
+    const msg = target.find((m) => m.messageId === messageId)
     if (msg) {
       Object.assign(msg, data)
     }
-    isStreaming.value = false
-    streamingContent.value = ''
+    if (!sessionId || sessionId === currentSessionId.value) {
+      isStreaming.value = false
+      streamingContent.value = ''
+    }
   }
 
   function findPendingClarification(): ChatMessage | undefined {
@@ -136,8 +156,25 @@ export const useChatStore = defineStore('chat', () => {
     )
   }
 
+  /**
+   * Returns the messages array that SSE events should write to.
+   * If the user is viewing the streaming session, writes to messages.value (visible).
+   * Otherwise writes to the messageCache (background).
+   */
+  function targetMessages(sessionId?: string): ChatMessage[] {
+    const sid = sessionId ?? currentSessionId.value
+    if (!sid) return messages.value
+    if (sid === currentSessionId.value) return messages.value
+    // Background session: return cache entry
+    let cached = messageCache.get(sid)
+    if (!cached) {
+      cached = []
+      messageCache.set(sid, cached)
+    }
+    return cached
+  }
+
   async function sendMessage(content: string) {
-    // If there's a pending clarification, route the answer through the clarify endpoint
     const pendingClarification = findPendingClarification()
     if (pendingClarification) {
       addUserMessage(content)
@@ -150,13 +187,7 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = true
     streamingContent.value = ''
 
-    const sessionId = currentSessionId.value
-    streamingSessionId = sessionId
-    abortController = new AbortController()
-
-    function isWrongSession(): boolean {
-      return currentSessionId.value !== streamingSessionId
-    }
+    const sessionId = currentSessionId.value!
 
     try {
       const response = await fetch('/api/v1/chat/messages', {
@@ -166,7 +197,6 @@ export const useChatStore = defineStore('chat', () => {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ sessionId, content }),
-        signal: abortController.signal,
       })
 
       if (!response.ok) {
@@ -198,17 +228,13 @@ export const useChatStore = defineStore('chat', () => {
           if (!line.startsWith('data:')) continue
           try {
             const data = JSON.parse(line.slice(5).trim())
-            // Guard: discard events that arrived after switching sessions
-            if (data.type === 'message' || data.type === 'processing' || data.type === 'done' || data.type === 'error' || data.type === 'clarification') {
-              if (isWrongSession()) continue
-            }
             if (data.type === 'processing') {
-              updateStreamingContent(data.content || '正在分析您的问题...')
+              updateStreamingContent(data.content || '正在分析您的问题...', sessionId)
             } else if (data.type === 'message') {
               fullContent += data.content || ''
-              updateStreamingContent(fullContent)
+              updateStreamingContent(fullContent, sessionId)
             } else if (data.type === 'clarification') {
-              updateStreamingContent(data.content || '')
+              updateStreamingContent(data.content || '', sessionId)
               finalizeMessage(finalMessageId, {
                 messageId: finalMessageId,
                 messageType: 4,
@@ -218,21 +244,24 @@ export const useChatStore = defineStore('chat', () => {
                   question: data.content,
                   options: data.options,
                 },
-              })
+              }, sessionId)
             } else if (data.type === 'done') {
               finalizeMessage(finalMessageId, {
                 messageId: finalMessageId,
                 sources: data.sources,
                 evidenceLevel: data.evidenceLevel,
                 tokensUsed: data.usage?.totalTokens,
-              })
+              }, sessionId)
             } else if (data.type === 'error') {
-              const last = messages.value[messages.value.length - 1]
+              const target = targetMessages(sessionId)
+              const last = target[target.length - 1]
               if (last && last.messageType === 2) {
                 last.content = data.content || '抱歉，处理您的问题时出错了，请重试。'
               }
-              isStreaming.value = false
-              streamingContent.value = ''
+              if (sessionId === currentSessionId.value) {
+                isStreaming.value = false
+                streamingContent.value = ''
+              }
             }
           } catch {
             // skip unparseable lines
@@ -240,23 +269,18 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
-      // Ensure streaming state is cleared when the stream ends naturally
-      if (!isWrongSession()) {
+      if (sessionId === currentSessionId.value) {
         isStreaming.value = false
         streamingContent.value = ''
       }
     } catch (e: any) {
-      if (e?.name === 'AbortError') return // session switch, silently ignore
-      if (isWrongSession()) return // already on another session
+      if (sessionId !== currentSessionId.value) return // switched away, silently discard
       const last = messages.value[messages.value.length - 1]
       if (last && last.messageType === 2) {
         last.content = e?.message || '抱歉，回复生成失败，请重试。'
       }
       isStreaming.value = false
       streamingContent.value = ''
-    } finally {
-      abortController = null
-      streamingSessionId = null
     }
 
     fetchSessions()
@@ -282,7 +306,6 @@ export const useChatStore = defineStore('chat', () => {
         if (lastClarification) {
           lastClarification.clarificationData.answered = true
         }
-        // Send the rewritten query as a new message
         await sendMessage(rewritten)
       }
     } catch {
