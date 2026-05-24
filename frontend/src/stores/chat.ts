@@ -20,6 +20,9 @@ export const useChatStore = defineStore('chat', () => {
   const streamingContent = ref('')
   const suggestedQuestions = ref<string[]>([])
 
+  let abortController: AbortController | null = null
+  let streamingSessionId: string | null = null
+
   const currentSession = computed(() =>
     sessions.value.find((s) => s.sessionId === currentSessionId.value)
   )
@@ -48,6 +51,7 @@ export const useChatStore = defineStore('chat', () => {
       await deleteSession(sessionId)
       sessions.value = sessions.value.filter((s) => s.sessionId !== sessionId)
       if (currentSessionId.value === sessionId) {
+        cancelStreaming()
         currentSessionId.value = null
         messages.value = []
       }
@@ -66,13 +70,25 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setSession(sessionId: string) {
+    cancelStreaming()
     currentSessionId.value = sessionId
     loadMessages(sessionId)
   }
 
   function newSession() {
+    cancelStreaming()
     currentSessionId.value = null
     messages.value = []
+  }
+
+  function cancelStreaming() {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    isStreaming.value = false
+    streamingContent.value = ''
+    streamingSessionId = null
   }
 
   function addUserMessage(content: string) {
@@ -135,6 +151,12 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
 
     const sessionId = currentSessionId.value
+    streamingSessionId = sessionId
+    abortController = new AbortController()
+
+    function isWrongSession(): boolean {
+      return currentSessionId.value !== streamingSessionId
+    }
 
     try {
       const response = await fetch('/api/v1/chat/messages', {
@@ -144,6 +166,7 @@ export const useChatStore = defineStore('chat', () => {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ sessionId, content }),
+        signal: abortController.signal,
       })
 
       if (!response.ok) {
@@ -175,6 +198,10 @@ export const useChatStore = defineStore('chat', () => {
           if (!line.startsWith('data:')) continue
           try {
             const data = JSON.parse(line.slice(5).trim())
+            // Guard: discard events that arrived after switching sessions
+            if (data.type === 'message' || data.type === 'processing' || data.type === 'done' || data.type === 'error' || data.type === 'clarification') {
+              if (isWrongSession()) continue
+            }
             if (data.type === 'processing') {
               updateStreamingContent(data.content || '正在分析您的问题...')
             } else if (data.type === 'message') {
@@ -214,15 +241,22 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       // Ensure streaming state is cleared when the stream ends naturally
-      isStreaming.value = false
-      streamingContent.value = ''
+      if (!isWrongSession()) {
+        isStreaming.value = false
+        streamingContent.value = ''
+      }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return // session switch, silently ignore
+      if (isWrongSession()) return // already on another session
       const last = messages.value[messages.value.length - 1]
       if (last && last.messageType === 2) {
         last.content = e?.message || '抱歉，回复生成失败，请重试。'
       }
       isStreaming.value = false
       streamingContent.value = ''
+    } finally {
+      abortController = null
+      streamingSessionId = null
     }
 
     fetchSessions()
