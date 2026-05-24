@@ -39,18 +39,6 @@ export interface SensitiveWord {
   enabled: number
 }
 
-export interface OperationLog {
-  id: number
-  userId: number
-  username: string
-  operationType: string
-  operationDesc: string
-  requestUrl: string
-  ipAddress: string
-  status: number
-  createdAt: string
-}
-
 // Dashboard
 export function getDashboardStats() {
   return request.get<DashboardStats>('/admin/dashboard/stats')
@@ -127,9 +115,4 @@ export function addSensitiveWord(data: { word: string; category?: string; level?
 
 export function deleteSensitiveWord(id: number) {
   return request.delete(`/admin/sensitive-words/${id}`)
-}
-
-// Operation Logs
-export function getOperationLogs(params?: { page?: number; size?: number; keyword?: string }) {
-  return request.get<{ records: OperationLog[]; total: number }>('/admin/operation-logs', { params })
 }

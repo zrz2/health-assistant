@@ -32,10 +32,6 @@
           <el-icon><WarningFilled /></el-icon>
           <span>敏感词管理</span>
         </el-menu-item>
-        <el-menu-item index="/admin/logs">
-          <el-icon><Tickets /></el-icon>
-          <span>操作日志</span>
-        </el-menu-item>
       </el-menu>
       <div class="sidebar-bottom-link">
         <router-link to="/chat" class="back-link">
@@ -77,7 +73,6 @@ const pageTitles: Record<string, string> = {
   '/admin/knowledge': '知识库管理',
   '/admin/stats': '咨询统计',
   '/admin/sensitive-words': '敏感词管理',
-  '/admin/logs': '操作日志',
 }
 
 const currentPageTitle = computed(() => pageTitles[route.path] || '')

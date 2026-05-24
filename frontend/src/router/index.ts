@@ -34,7 +34,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'knowledge', name: 'Knowledge', component: () => import('@/views/admin/KnowledgePage.vue') },
       { path: 'stats', name: 'Statistics', component: () => import('@/views/admin/StatisticsPage.vue') },
       { path: 'sensitive-words', name: 'SensitiveWords', component: () => import('@/views/admin/SensitiveWordsPage.vue') },
-      { path: 'logs', name: 'OperationLogs', component: () => import('@/views/admin/OperationLogsPage.vue') },
     ],
   },
 ]

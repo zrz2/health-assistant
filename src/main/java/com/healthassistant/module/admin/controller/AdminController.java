@@ -2,9 +2,7 @@ package com.healthassistant.module.admin.controller;
 
 import com.healthassistant.common.result.Result;
 import com.healthassistant.module.admin.dto.*;
-import com.healthassistant.module.admin.entity.OperationLog;
 import com.healthassistant.module.admin.entity.SensitiveWord;
-import com.healthassistant.module.admin.repository.OperationLogRepository;
 import com.healthassistant.module.admin.service.*;
 import com.healthassistant.module.knowledge.entity.KnowledgeItem;
 import com.healthassistant.module.knowledge.entity.SyncTask;
@@ -29,18 +27,15 @@ public class AdminController {
     private final AdminUserService userService;
     private final AdminKnowledgeService knowledgeService;
     private final SensitiveWordService sensitiveWordService;
-    private final OperationLogRepository operationLogRepository;
 
     public AdminController(AdminDashboardService dashboardService,
                            AdminUserService userService,
                            AdminKnowledgeService knowledgeService,
-                           SensitiveWordService sensitiveWordService,
-                           OperationLogRepository operationLogRepository) {
+                           SensitiveWordService sensitiveWordService) {
         this.dashboardService = dashboardService;
         this.userService = userService;
         this.knowledgeService = knowledgeService;
         this.sensitiveWordService = sensitiveWordService;
-        this.operationLogRepository = operationLogRepository;
     }
 
     // ==================== Dashboard ====================
@@ -192,17 +187,6 @@ public class AdminController {
     public Result<Void> deleteSensitiveWord(@PathVariable Long id) {
         sensitiveWordService.deleteWord(id);
         return Result.success();
-    }
-
-    // ==================== Operation Logs ====================
-
-    @GetMapping("/operation-logs")
-    public Result<Page<OperationLogResponse>> getOperationLogs(
-            @RequestParam(required = false) Long userId,
-            @RequestParam(required = false) String operation,
-            @PageableDefault(size = 20, sort = "createdAt", direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable) {
-        Page<OperationLog> page = operationLogRepository.findAll(pageable);
-        return Result.success(page.map(OperationLogResponse::from));
     }
 
     // ==================== Health Check ====================
