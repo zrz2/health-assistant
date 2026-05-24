@@ -101,23 +101,14 @@ public class ElasticsearchConfig {
                 {
                   "settings": {
                     "number_of_shards": 1,
-                    "number_of_replicas": 0,
-                    "analysis": {
-                      "analyzer": {
-                        "ik_analyzer": {
-                          "type": "custom",
-                          "tokenizer": "ik_max_word",
-                          "filter": ["lowercase"]
-                        }
-                      }
-                    }
+                    "number_of_replicas": 0
                   },
                   "mappings": {
                     "properties": {
                       "content": {
                         "type": "text",
-                        "analyzer": "ik_analyzer",
-                        "search_analyzer": "ik_smart"
+                        "analyzer": "cjk",
+                        "search_analyzer": "cjk"
                       },
                       "content_vector": {
                         "type": "dense_vector",
