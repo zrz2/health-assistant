@@ -88,15 +88,15 @@
         <el-form-item label="饮食习惯">
           <el-input v-model="lifestyle.diet" type="textarea" :rows="2" placeholder="例如：清淡、偏辣、素食等" />
         </el-form-item>
-
-        <el-form-item>
-          <el-button v-if="!editing" type="primary" @click="startEdit">编辑</el-button>
-          <template v-else>
-            <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-            <el-button @click="cancelEdit">取消</el-button>
-          </template>
-        </el-form-item>
       </el-form>
+
+      <div class="form-actions">
+        <el-button v-if="!editing" type="primary" @click="startEdit">编辑</el-button>
+        <template v-else>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+          <el-button @click="cancelEdit">取消</el-button>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -232,5 +232,9 @@ onMounted(async () => {
   font-size: 20px;
   color: #303133;
   margin-bottom: 24px;
+}
+
+.form-actions {
+  margin-top: 16px;
 }
 </style>
