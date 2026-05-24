@@ -15,7 +15,10 @@ import java.util.List;
 @Getter
 @Setter
 @Entity
-@Table(name = "sys_user")
+@Table(name = "sys_user", indexes = {
+    @Index(name = "idx_user_username", columnList = "username"),
+    @Index(name = "idx_user_email", columnList = "email")
+})
 public class User implements UserDetails {
 
     @Id
@@ -83,7 +86,7 @@ public class User implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        String role = userType == 3 ? "ROLE_ADMIN" : userType == 2 ? "ROLE_STAFF" : "ROLE_USER";
+        String role = userType == 3 ? "ROLE_ADMIN" : "ROLE_USER";
         return List.of(new SimpleGrantedAuthority(role));
     }
 

@@ -1,9 +1,7 @@
 package com.healthassistant.module.rag.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.Script;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.json.JsonData;
 import com.healthassistant.module.rag.dto.RetrievedDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,18 +42,16 @@ public class VectorSearchService {
                 float[] queryVector = embed(query);
                 if (queryVector == null) continue;
 
+                List<Float> queryVectorList = new ArrayList<>();
+                for (float v : queryVector) queryVectorList.add(v);
+
                 SearchResponse<Map> response = esClient.search(s -> s
                         .index(indexName)
-                        .query(q -> q
-                                .scriptScore(ss -> ss
-                                        .query(sq -> sq.matchAll(ma -> ma))
-                                        .script(Script.of(sc -> sc
-                                                .inline(in -> in
-                                                        .source("cosineSimilarity(params.query_vector, 'content_vector') + 1.0")
-                                                        .params("query_vector", JsonData.of(queryVector))
-                                                )
-                                        ))
-                                )
+                        .knn(k -> k
+                                .field("content_vector")
+                                .queryVector(queryVectorList)
+                                .k(topK)
+                                .numCandidates(topK * 3)
                         )
                         .size(topK),
                         Map.class);
@@ -65,8 +61,8 @@ public class VectorSearchService {
                     if (seenIds.add(docId)) {
                         Map<String, Object> source = hit.source();
                         if (source != null) {
-                            double adjustedScore = (hit.score() != null ? hit.score() : 0.0) - 1.0;
-                            results.add(toRetrievedDocument(docId, source, adjustedScore));
+                            double score = hit.score() != null ? hit.score() : 0.0;
+                            results.add(toRetrievedDocument(docId, source, score));
                         }
                     }
                 });

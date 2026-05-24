@@ -12,6 +12,8 @@ import com.healthassistant.module.chat.entity.ChatSession;
 import com.healthassistant.module.chat.entity.ClarificationRecord;
 import com.healthassistant.module.chat.repository.ChatMessageRepository;
 import com.healthassistant.module.chat.repository.ChatSessionRepository;
+import com.healthassistant.module.user.entity.HealthRecord;
+import com.healthassistant.module.user.repository.HealthRecordRepository;
 import com.healthassistant.module.rag.service.RagService;
 import com.healthassistant.common.util.RetryUtils;
 import org.slf4j.Logger;
@@ -26,7 +28,9 @@ import reactor.core.publisher.Flux;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +46,8 @@ public class ChatService {
     private final ObjectMapper objectMapper;
     private final RagService ragService;
     private final SensitiveWordService sensitiveWordService;
+    private final HealthRecordRepository healthRecordRepository;
+    private final ExecutorService chatExecutor;
 
     @Value("${app.chat.max-history:10}")
     private int maxHistory;
@@ -56,7 +62,9 @@ public class ChatService {
                        ChatClient.Builder chatClientBuilder,
                        ObjectMapper objectMapper,
                        RagService ragService,
-                       SensitiveWordService sensitiveWordService) {
+                       SensitiveWordService sensitiveWordService,
+                       HealthRecordRepository healthRecordRepository,
+                       ExecutorService chatExecutor) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.sessionService = sessionService;
@@ -65,6 +73,8 @@ public class ChatService {
         this.objectMapper = objectMapper;
         this.ragService = ragService;
         this.sensitiveWordService = sensitiveWordService;
+        this.healthRecordRepository = healthRecordRepository;
+        this.chatExecutor = chatExecutor;
     }
 
     @Transactional
@@ -76,17 +86,13 @@ public class ChatService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该会话");
         }
 
-        // Sensitive word check
-        if (sensitiveWordService.containsSensitiveWord(content)) {
-            throw new BusinessException(ErrorCode.CONTENT_REJECTED, "消息包含违规内容");
-        }
-
         // Save user message (quick DB ops)
         ChatMessage userMsg = saveMessage(session.getId(), null, 1, content);
         sessionService.incrementMessageCount(session.getId());
 
-        // Get history
+        // Get history and health profile
         String history = buildHistory(session.getId());
+        String healthProfile = buildHealthProfile(userId);
 
         // Create emitter with generous timeout
         SseEmitter emitter = new SseEmitter(streamTimeout);
@@ -98,23 +104,33 @@ public class ChatService {
         // Run heavy LLM processing asynchronously so the emitter connects immediately
         final Long sessionId = session.getId();
         final String msgId = userMsg.getMessageId();
+        final String finalHealthProfile = healthProfile;
         CompletableFuture.runAsync(() -> {
             try {
+                if (sensitiveWordService.containsSensitiveWord(content)) {
+                    sendEvent(emitter, "error",
+                            new ChatEvent("error", null, "消息包含违规内容，无法回答", null, null, null));
+                    emitter.complete();
+                    return;
+                }
+
                 ClarificationService.ClarificationResult clarification = clarificationService
                         .checkClarification(content, history);
 
                 if (clarification.needsClarification()) {
                     handleClarification(emitter, session, msgId, clarification);
                 } else {
-                    handleStreamResponse(emitter, sessionId, content, history, msgId);
+                    handleStreamResponse(emitter, sessionId, content, history, finalHealthProfile, msgId);
                 }
             } catch (Exception e) {
                 log.error("Chat processing error for session {}", sessionId, e);
+                String errMsg = e instanceof BusinessException ? e.getMessage()
+                        : "抱歉，处理您的问题时出错了，请重试。";
                 sendEvent(emitter, "error",
-                        new ChatEvent("error", null, "抱歉，处理您的问题时出错了，请重试。", null, null, null));
+                        new ChatEvent("error", null, errMsg, null, null, null));
                 emitter.complete();
             }
-        });
+        }, chatExecutor);
 
         return emitter;
     }
@@ -163,7 +179,8 @@ public class ChatService {
     }
 
     private void handleStreamResponse(SseEmitter emitter, Long sessionId,
-                                       String question, String history, String parentMessageId) {
+                                       String question, String history, String healthProfile,
+                                       String parentMessageId) {
         // Try RAG augmentation
         RagService.RagResult ragResult = ragService.augmentPrompt(question, history);
         String prompt;
@@ -176,20 +193,30 @@ public class ChatService {
             }
             log.info("Using RAG-augmented prompt with {} sources", ragResult.sources().size());
         } else {
-            prompt = buildQaPrompt(question, history);
+            prompt = buildQaPrompt(question, history, healthProfile);
         }
 
+        // Inject health profile into RAG prompt
+        if (healthProfile != null && !healthProfile.isEmpty()) {
+            if (ragResult != null) {
+                prompt = prompt.replace("## 回答规则", healthProfile + "\n\n## 回答规则");
+            }
+            log.info("Health profile injected into prompt for user session {}", sessionId);
+        }
+
+        final String finalPrompt = prompt;
         final String finalSources = sources;
         StringBuilder fullContent = new StringBuilder();
 
         Flux<String> flux = Flux.defer(() -> {
                     ChatClient chatClient = chatClientBuilder.build();
                     return chatClient.prompt()
-                            .user(prompt)
+                            .user(finalPrompt)
                             .stream()
                             .content();
                 })
-                .retryWhen(RetryUtils.fluxRetry("ChatStream"));
+                .retryWhen(RetryUtils.fluxRetry("ChatStream"))
+                .timeout(java.time.Duration.ofMillis(streamTimeout));
 
         flux.subscribe(
                 chunk -> {
@@ -235,9 +262,13 @@ public class ChatService {
         sessionService.incrementMessageCount(sessionId);
     }
 
-    public List<ChatMessageDTO> getMessageHistory(String sessionId) {
+    public List<ChatMessageDTO> getMessageHistory(String sessionId, Long userId) {
         ChatSession session = sessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SESSION_NOT_FOUND, "会话不存在"));
+
+        if (!Objects.equals(session.getUserId(), userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该会话");
+        }
 
         return messageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId())
                 .stream()
@@ -273,8 +304,9 @@ public class ChatService {
         return sb.toString();
     }
 
-    private String buildQaPrompt(String question, String history) {
-        return String.format("""
+    private String buildQaPrompt(String question, String history, String healthProfile) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
                 你是一个专业的医疗健康助手。请根据以下规则回答用户问题：
 
                 ## 核心规则
@@ -282,7 +314,15 @@ public class ChatService {
                 2. 回答应专业、客观、严谨。
                 3. 如果用户描述紧急症状（胸痛、严重出血、呼吸困难等），建议立即就医。
                 4. 对于不确定的问题，诚实说明并建议咨询医生。
+                5. 如果提供了用户健康档案，应结合档案信息给出个性化建议。
 
+                """);
+
+        if (healthProfile != null && !healthProfile.isEmpty()) {
+            sb.append(healthProfile).append("\n\n");
+        }
+
+        sb.append(String.format("""
                 ## 对话历史
                 %s
 
@@ -291,7 +331,46 @@ public class ChatService {
 
                 ## 免责声明
                 %s
-                """, history, question, Constants.MEDICAL_DISCLAIMER);
+                """, history, question, Constants.MEDICAL_DISCLAIMER));
+
+        return sb.toString();
+    }
+
+    private String buildHealthProfile(Long userId) {
+        if (userId == null) return null;
+
+        return healthRecordRepository.findByUserId(userId)
+                .map(record -> {
+                    log.debug("Found health record for userId={}", userId);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("## 用户健康档案\n");
+                    sb.append("以下是当前用户的健康信息，回答健康相关问题时必须结合这些信息给出个性化建议：\n");
+
+                    if (record.getAge() != null) sb.append("- 年龄: ").append(record.getAge()).append("岁\n");
+                    if (record.getGender() != null) {
+                        String gender = switch (record.getGender()) {
+                            case 1 -> "男";
+                            case 0 -> "女";
+                            default -> "其他";
+                        };
+                        sb.append("- 性别: ").append(gender).append("\n");
+                    }
+                    if (record.getHeight() != null) sb.append("- 身高: ").append(record.getHeight()).append("cm\n");
+                    if (record.getWeight() != null) sb.append("- 体重: ").append(record.getWeight()).append("kg\n");
+                    if (record.getBloodType() != null && !record.getBloodType().isBlank())
+                        sb.append("- 血型: ").append(record.getBloodType()).append("\n");
+                    if (record.getMedicalHistory() != null && !record.getMedicalHistory().isBlank())
+                        sb.append("- 既往病史: ").append(record.getMedicalHistory()).append("\n");
+                    if (record.getAllergies() != null && !record.getAllergies().isBlank())
+                        sb.append("- 过敏史: ").append(record.getAllergies()).append("\n");
+                    if (record.getChronicDiseases() != null && !record.getChronicDiseases().isBlank())
+                        sb.append("- 慢性病: ").append(record.getChronicDiseases()).append("\n");
+                    if (record.getCurrentMedications() != null && !record.getCurrentMedications().isBlank())
+                        sb.append("- 当前用药: ").append(record.getCurrentMedications()).append("\n");
+
+                    return sb.toString();
+                })
+                .orElse(null);
     }
 
     private String buildClarificationData(String clarificationId,

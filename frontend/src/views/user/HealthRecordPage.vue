@@ -88,15 +88,15 @@
         <el-form-item label="饮食习惯">
           <el-input v-model="lifestyle.diet" type="textarea" :rows="2" placeholder="例如：清淡、偏辣、素食等" />
         </el-form-item>
-
-        <el-form-item>
-          <el-button v-if="!editing" type="primary" @click="startEdit">编辑</el-button>
-          <template v-else>
-            <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-            <el-button @click="cancelEdit">取消</el-button>
-          </template>
-        </el-form-item>
       </el-form>
+
+      <div class="form-actions">
+        <el-button v-if="!editing" type="primary" @click="startEdit">编辑</el-button>
+        <template v-else>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+          <el-button @click="cancelEdit">取消</el-button>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -108,17 +108,20 @@ import { getHealthRecord, updateHealthRecord } from '@/api/user'
 
 const editing = ref(false)
 const saving = ref(false)
-const form = reactive({
-  age: 0,
-  gender: 1,
-  height: 0,
-  weight: 0,
-  bloodType: '',
-  medicalHistory: '',
-  allergies: '',
-  chronicDiseases: '',
-  currentMedications: '',
+
+const defaultForm = () => ({
+  age: 0 as number | undefined,
+  gender: undefined as number | undefined,
+  height: undefined as number | undefined,
+  weight: undefined as number | undefined,
+  bloodType: '' as string,
+  medicalHistory: '' as string,
+  allergies: '' as string,
+  chronicDiseases: '' as string,
+  currentMedications: '' as string,
 })
+
+const form = reactive(defaultForm())
 
 const lifestyle = reactive<Record<string, any>>({
   smoking: 'none',
@@ -130,7 +133,10 @@ const lifestyle = reactive<Record<string, any>>({
 const originalForm = ref('')
 
 function saveOriginal() {
-  originalForm.value = JSON.stringify({ ...form, lifestyle: { ...lifestyle } })
+  originalForm.value = JSON.stringify({
+    ...form,
+    lifestyle: { ...lifestyle },
+  })
 }
 
 function startEdit() {
@@ -141,8 +147,15 @@ function startEdit() {
 function cancelEdit() {
   if (originalForm.value) {
     const data = JSON.parse(originalForm.value)
-    Object.assign(form, data)
-    Object.assign(lifestyle, data.lifestyle)
+    Object.assign(form, defaultForm(), data)
+    if (data.lifestyle) {
+      Object.assign(lifestyle, {
+        smoking: 'none',
+        alcohol: 'none',
+        exercise: 'none',
+        diet: '',
+      }, data.lifestyle)
+    }
   }
   editing.value = false
 }
@@ -150,35 +163,51 @@ function cancelEdit() {
 async function handleSave() {
   saving.value = true
   try {
-    await updateHealthRecord({ ...form, lifestyle: JSON.stringify(lifestyle) } as any)
+    // 只发送有值的字段，避免发送初始化默认值
+    const body: Record<string, any> = {}
+    for (const key of Object.keys(form) as (keyof typeof form)[]) {
+      if (form[key] !== undefined && form[key] !== '') {
+        body[key] = form[key]
+      }
+    }
+    body.lifestyle = JSON.stringify(lifestyle)
+
+    await updateHealthRecord(body as any)
     ElMessage.success('保存成功')
     editing.value = false
-  } catch {
-    // handled by interceptor
+  } catch (e: any) {
+    ElMessage.error(e?.message || '保存失败，请重试')
   } finally {
     saving.value = false
-  }
-}
-
-function parseLifestyle(data: any) {
-  if (!data.lifestyle) return
-  if (typeof data.lifestyle === 'string') {
-    try { data.lifestyle = JSON.parse(data.lifestyle) } catch { return }
   }
 }
 
 onMounted(async () => {
   try {
     const res = await getHealthRecord()
-    if (res.data) {
-      parseLifestyle(res.data)
-      Object.assign(form, res.data)
-      if (res.data.lifestyle && typeof res.data.lifestyle === 'object') {
-        Object.assign(lifestyle, res.data.lifestyle)
+    const record = res.data
+    if (record) {
+      // lifestyle 是 JSON 字符串，先解析
+      let lifestyleData = null
+      if (record.lifestyle) {
+        try {
+          lifestyleData = typeof record.lifestyle === 'string'
+            ? JSON.parse(record.lifestyle)
+            : record.lifestyle
+        } catch { /* ignore */ }
+      }
+
+      // 填充表单，排除 lifestyle（它单独处理）
+      const { lifestyle: _, ...formFields } = record
+      Object.assign(form, formFields)
+
+      // 填充生活方式
+      if (lifestyleData) {
+        Object.assign(lifestyle, lifestyleData)
       }
     }
   } catch {
-    // empty record is ok
+    // 无记录时显示空表单
   }
 })
 </script>
@@ -203,5 +232,9 @@ onMounted(async () => {
   font-size: 20px;
   color: #303133;
   margin-bottom: 24px;
+}
+
+.form-actions {
+  margin-top: 16px;
 }
 </style>

@@ -39,27 +39,6 @@ export interface SensitiveWord {
   enabled: number
 }
 
-export interface OperationLog {
-  id: number
-  userId: number
-  username: string
-  operationType: string
-  operationDesc: string
-  requestUrl: string
-  ipAddress: string
-  status: number
-  createdAt: string
-}
-
-export interface SystemConfig {
-  id: number
-  configKey: string
-  configValue: string
-  configType: string
-  description: string
-  category: string
-}
-
 // Dashboard
 export function getDashboardStats() {
   return request.get<DashboardStats>('/admin/dashboard/stats')
@@ -73,6 +52,10 @@ export function getSourceDistribution() {
   return request.get('/admin/dashboard/source-distribution')
 }
 
+export function getRecentQueries() {
+  return request.get<{ id: number; content: string; sessionId: number; createdAt: string }[]>('/admin/dashboard/recent-queries')
+}
+
 // Users
 export function getUsers(params?: { page?: number; size?: number; keyword?: string }) {
   return request.get<{ records: AdminUser[]; total: number }>('/admin/users', { params })
@@ -83,11 +66,11 @@ export function getUser(id: number) {
 }
 
 export function updateUserStatus(id: number, status: number) {
-  return request.put(`/admin/users/${id}/status`, { status })
+  return request.put(`/admin/users/${id}/status`, null, { params: { status } })
 }
 
 export function updateUserRole(id: number, userType: number) {
-  return request.put(`/admin/users/${id}/role`, { userType })
+  return request.put(`/admin/users/${id}/role`, null, { params: { userType } })
 }
 
 // Knowledge
@@ -136,18 +119,4 @@ export function addSensitiveWord(data: { word: string; category?: string; level?
 
 export function deleteSensitiveWord(id: number) {
   return request.delete(`/admin/sensitive-words/${id}`)
-}
-
-// Operation Logs
-export function getOperationLogs(params?: { page?: number; size?: number; keyword?: string }) {
-  return request.get<{ records: OperationLog[]; total: number }>('/admin/operation-logs', { params })
-}
-
-// System Config
-export function getSystemConfigs() {
-  return request.get<SystemConfig[]>('/admin/config')
-}
-
-export function updateSystemConfig(data: Partial<SystemConfig>) {
-  return request.put('/admin/config', data)
 }

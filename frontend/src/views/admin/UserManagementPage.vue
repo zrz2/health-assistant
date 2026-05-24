@@ -13,8 +13,8 @@
       <el-table-column prop="phone" label="手机号" width="140" />
       <el-table-column label="角色" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.userType === 3 ? 'danger' : row.userType === 2 ? 'warning' : ''" size="small">
-            {{ row.userType === 3 ? '管理员' : row.userType === 2 ? '工作人员' : '普通用户' }}
+          <el-tag :type="row.userType === 3 ? 'danger' : ''" size="small">
+            {{ row.userType === 3 ? '管理员' : '普通用户' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -64,7 +64,7 @@ const keyword = ref('')
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getUsers({ page: page.value, size: size.value, keyword: keyword.value })
+    const res = await getUsers({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
       users.value = res.data?.content || []
       total.value = res.data?.totalElements || 0
@@ -85,11 +85,11 @@ async function toggleStatus(user: AdminUser) {
 
 async function changeRole(user: AdminUser) {
   try {
-    const answer = await ElMessageBox.prompt('请输入新角色 (1=普通用户 2=工作人员 3=管理员)', '修改角色', {
+    const answer = await ElMessageBox.prompt('请输入新角色 (1=普通用户 3=管理员)', '修改角色', {
       inputValue: String(user.userType),
     })
     const newType = Number(answer.value)
-    if (![1, 2, 3].includes(newType)) {
+    if (![1, 3].includes(newType)) {
       ElMessage.error('角色值无效')
       return
     }

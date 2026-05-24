@@ -22,7 +22,7 @@
           :key="session.sessionId"
           class="session-item"
           :class="{ active: chatStore.currentSessionId === session.sessionId }"
-          @click="chatStore.setSession(session.sessionId)"
+          @click="handleSessionClick(session.sessionId)"
         >
           <div class="session-title">{{ session.title || '新对话' }}</div>
           <div class="session-meta">
@@ -92,12 +92,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const router = useRouter()
+const route = useRoute()
 const searchKeyword = ref('')
 
 const filteredSessions = computed(() => {
@@ -108,8 +111,16 @@ const filteredSessions = computed(() => {
   )
 })
 
+function handleSessionClick(sessionId: string) {
+  chatStore.setSession(sessionId)
+  if (route.path !== '/chat') {
+    router.push('/chat')
+  }
+}
+
 async function handleNewChat() {
   chatStore.newSession()
+  router.push('/chat')
 }
 
 onMounted(() => {

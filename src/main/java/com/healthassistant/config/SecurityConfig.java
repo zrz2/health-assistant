@@ -33,11 +33,6 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                     "/api/v1/auth/**",
-                    "/api/v1/chat/sessions/**",
-                    "/api/v1/chat/messages/**",
-                    "/api/v1/chat/clarify",
-                    "/api/v1/chat/feedback",
-                    "/api/v1/chat/suggested-questions",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
                     "/actuator/health"

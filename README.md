@@ -4,28 +4,29 @@
 
 ## 功能概览
 
-- **智能对话** — SSE 流式回复，支持多轮对话、模糊问题澄清、用户反馈
-- **RAG 检索增强** — 查询重写 → 多路检索（向量 + BM25）→ RRF 融合 → Cross-encoder 重排序 → 父文档上下文
+- **智能对话** — SSE 流式回复，支持多轮对话、模糊问题澄清、用户反馈，结合用户健康档案给出个性化建议
+- **RAG 检索增强** — 查询重写 → 并行检索（向量 KNN + BM25）→ RRF 融合 → LLM 重排序 → 父文档上下文
 - **知识库管理** — 医学章节感知切分、证据分级、Elasticsearch HNSW 向量索引
 - **数据抓取** — 自动爬取 WHO、中国疾控中心、丁香医生等公开健康知识源
-- **管理后台** — 仪表盘、用户管理、知识导入/抓取、DFA 敏感词过滤、操作日志
+- **管理后台** — 仪表盘（实时统计 + 趋势图）、用户管理、知识导入/抓取、DFA 敏感词过滤
+- **安全认证** — Spring Security + JWT 无状态认证，所有 Chat 端点需登录，会话所有权校验，JWT jti 黑名单
 
 ## 技术栈
 
 | 组件 | 用途 |
 |------|------|
-| Java 17 + Spring Boot 3.3.5 | 后端框架 |
+| Java 25 + Spring Boot 3.3.5 | 后端框架 |
 | Spring AI Alibaba 1.0.0.3 | DashScope Chat（qwen-max）+ Embedding（text-embedding-v3, 1024维） |
 | MySQL 8.0 | 业务数据持久化 |
-| Redis 7.x | 会话缓存、JWT 黑名单、限流计数 |
-| Elasticsearch 8.x | HNSW 向量检索 + IK 中文分词 + BM25 关键词检索 |
-| Spring Security + JWT | 无状态认证 & 授权 |
+| Redis 7.x | JWT jti 黑名单、Refresh Token 缓存、限流计数 |
+| Elasticsearch 8.x | KNN 向量检索 + IK 中文分词 + BM25 关键词检索 |
+| Spring Security + JWT (jjwt 0.12.5) | 无状态认证 & 授权，Chat 端点强制登录 |
 | Jsoup 1.17 | HTML 数据清洗 |
 | SpringDoc OpenAPI 2.5 | API 文档（Swagger UI） |
 
 ## 运行环境
 
-- **JDK** 17+
+- **JDK** 25+
 - **Maven** 3.9+
 - **MySQL** 8.0 — 创建数据库 `health_assistant`（UTF-8, utf8mb4）
 - **Redis** 7.x（默认端口 6379）
@@ -38,11 +39,11 @@
 
 确保已安装并启动以下服务：
 
-- **JDK 17+** & **Maven 3.9+**
+- **JDK 25+** & **Maven 3.9+**
 - **Node.js 18+**（前端）
 - **MySQL 8.0**
 - **Redis 7.x**
-- **Elasticsearch 8.x**（RAG 阶段需要，可延后配置）
+- **Elasticsearch 8.x**（向量检索必须）
 
 ### 2. 创建数据库
 
@@ -94,7 +95,7 @@ npm run dev
 - **API 服务**: `http://localhost:8080`
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html`
 
-### 5. 导入知识库（可选）
+### 6. 导入知识库（可选）
 
 启动后知识库为空，可通过两种方式导入：
 
@@ -126,7 +127,7 @@ curl -X POST http://localhost:8080/api/v1/admin/knowledge/import/single \
   }'
 ```
 
-### 6. 开始对话
+### 7. 开始对话
 
 ```bash
 # 注册用户
@@ -172,14 +173,14 @@ curl -X POST http://localhost:8080/api/v1/chat/messages \
 | GET | `/health-record` | 获取健康档案 |
 | PUT | `/health-record` | 更新健康档案 |
 
-### 对话模块 `/api/v1/chat`
+### 对话模块 `/api/v1/chat`（需登录）
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/sessions` | 创建会话 |
 | GET | `/sessions` | 会话列表 |
 | GET | `/sessions/{id}` | 会话详情 |
 | DELETE | `/sessions/{id}` | 删除会话 |
-| POST | `/messages` | 发送消息（SSE 流式） |
+| POST | `/messages` | 发送消息（SSE 流式，结合健康档案） |
 | GET | `/messages/{sessionId}` | 消息历史 |
 | POST | `/clarify` | 提交澄清回答 |
 | POST | `/feedback` | 提交反馈 |
@@ -207,6 +208,7 @@ curl -X POST http://localhost:8080/api/v1/chat/messages \
 | GET | `/dashboard/stats` | 核心统计数据 |
 | GET | `/dashboard/trends` | 7 日趋势 |
 | GET | `/dashboard/source-distribution` | 知识来源分布 |
+| GET | `/dashboard/recent-queries` | 用户最新提问 |
 
 **用户管理**
 | 方法 | 路径 | 说明 |
@@ -240,8 +242,6 @@ curl -X POST http://localhost:8080/api/v1/chat/messages \
 | GET | `/sensitive-words` | 敏感词列表 |
 | POST | `/sensitive-words` | 添加敏感词 |
 | DELETE | `/sensitive-words/{id}` | 删除敏感词 |
-| GET | `/operation-logs` | 操作日志 |
-| GET | `/health` | 健康检查 |
 
 ## 知识来源 & 证据等级
 
@@ -265,9 +265,10 @@ curl -X POST http://localhost:8080/api/v1/chat/messages \
 ```
 用户提问 → SensitiveWordService DFA 过滤
   → QueryRewriter LLM 多查询重写（口语→医学检索词）
-  → VectorSearch + BM25 并行检索
-  → RRF 融合 → Cross-encoder 重排序
+  → VectorSearch (KNN) + KeywordSearch (BM25) 并行检索
+  → RRF 融合 → LLM ReRanker 重排序
   → 父文档上下文扩展（MySQL 回查完整章节）
+  → 注入用户健康档案（年龄/病史/过敏史/慢病/用药等）
   → DashScope qwen-max 流式生成 → SSE 返回
 ```
 

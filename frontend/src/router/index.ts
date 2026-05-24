@@ -33,9 +33,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'users', name: 'UserManagement', component: () => import('@/views/admin/UserManagementPage.vue') },
       { path: 'knowledge', name: 'Knowledge', component: () => import('@/views/admin/KnowledgePage.vue') },
       { path: 'stats', name: 'Statistics', component: () => import('@/views/admin/StatisticsPage.vue') },
-      { path: 'config', name: 'SystemConfig', component: () => import('@/views/admin/SystemConfigPage.vue') },
       { path: 'sensitive-words', name: 'SensitiveWords', component: () => import('@/views/admin/SensitiveWordsPage.vue') },
-      { path: 'logs', name: 'OperationLogs', component: () => import('@/views/admin/OperationLogsPage.vue') },
     ],
   },
 ]

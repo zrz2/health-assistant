@@ -38,7 +38,9 @@ public class JwtTokenProvider {
 
     public String generateAccessToken(String username, Long userId, int userType) {
         Date now = new Date();
+        String jti = java.util.UUID.randomUUID().toString();
         return Jwts.builder()
+                .id(jti)
                 .subject(username)
                 .claim("userId", userId)
                 .claim("userType", userType)
@@ -46,6 +48,10 @@ public class JwtTokenProvider {
                 .expiration(new Date(now.getTime() + expiration))
                 .signWith(secretKey)
                 .compact();
+    }
+
+    public String getJtiFromToken(String token) {
+        return parseClaims(token).getId();
     }
 
     public String generateRefreshToken(String username) {
@@ -87,15 +93,17 @@ public class JwtTokenProvider {
     }
 
     public void blacklistToken(String token) {
+        String jti = getJtiFromToken(token);
         long ttl = parseClaims(token).getExpiration().getTime() - System.currentTimeMillis();
         if (ttl > 0) {
-            String key = "ha:jwt:blacklist:" + token;
+            String key = "ha:jwt:blacklist:" + jti;
             redisTemplate.opsForValue().set(key, "1", Duration.ofMillis(ttl));
         }
     }
 
     private boolean isTokenBlacklisted(String token) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey("ha:jwt:blacklist:" + token));
+        String jti = getJtiFromToken(token);
+        return Boolean.TRUE.equals(redisTemplate.hasKey("ha:jwt:blacklist:" + jti));
     }
 
     private Claims parseClaims(String token) {

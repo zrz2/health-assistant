@@ -26,4 +26,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 
     long countByFeedbackType(Integer feedbackType);
+
+    Page<ChatMessage> findByMessageTypeOrderByCreatedAtDesc(Integer messageType, Pageable pageable);
 }

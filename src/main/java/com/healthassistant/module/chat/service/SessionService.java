@@ -39,13 +39,16 @@ public class SessionService {
     }
 
     public Page<ChatSessionDTO> listSessions(Long userId, Pageable pageable) {
-        return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
+        return sessionRepository.findByUserIdAndStatusOrderByUpdatedAtDesc(userId, 1, pageable)
                 .map(this::toDTO);
     }
 
-    public ChatSessionDTO getSession(String sessionId) {
+    public ChatSessionDTO getSession(String sessionId, Long userId) {
         ChatSession session = sessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SESSION_NOT_FOUND, "会话不存在"));
+        if (!Objects.equals(session.getUserId(), userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该会话");
+        }
         return toDTO(session);
     }
 
