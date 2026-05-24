@@ -59,7 +59,8 @@ public class ChatController {
     @Operation(summary = "获取会话详情")
     @GetMapping("/sessions/{sessionId}")
     public Result<ChatSessionDTO> getSession(@PathVariable String sessionId) {
-        return Result.success(sessionService.getSession(sessionId));
+        Long userId = getCurrentUserId();
+        return Result.success(sessionService.getSession(sessionId, userId));
     }
 
     @Operation(summary = "删除会话")
@@ -80,7 +81,8 @@ public class ChatController {
     @Operation(summary = "获取消息历史")
     @GetMapping("/messages/{sessionId}")
     public Result<List<ChatMessageDTO>> getMessages(@PathVariable String sessionId) {
-        return Result.success(chatService.getMessageHistory(sessionId));
+        Long userId = getCurrentUserId();
+        return Result.success(chatService.getMessageHistory(sessionId, userId));
     }
 
     @Operation(summary = "回答澄清问题")

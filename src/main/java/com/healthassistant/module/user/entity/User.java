@@ -15,7 +15,10 @@ import java.util.List;
 @Getter
 @Setter
 @Entity
-@Table(name = "sys_user")
+@Table(name = "sys_user", indexes = {
+    @Index(name = "idx_user_username", columnList = "username"),
+    @Index(name = "idx_user_email", columnList = "email")
+})
 public class User implements UserDetails {
 
     @Id

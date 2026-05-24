@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class RetrieverService {
@@ -18,17 +20,20 @@ public class RetrieverService {
     private final KeywordSearchService keywordSearchService;
     private final HybridSearchService hybridSearchService;
     private final ReRankerService reRankerService;
+    private final ExecutorService searchExecutor;
 
     public RetrieverService(QueryRewriter queryRewriter,
                             VectorSearchService vectorSearchService,
                             KeywordSearchService keywordSearchService,
                             HybridSearchService hybridSearchService,
-                            ReRankerService reRankerService) {
+                            ReRankerService reRankerService,
+                            ExecutorService searchExecutor) {
         this.queryRewriter = queryRewriter;
         this.vectorSearchService = vectorSearchService;
         this.keywordSearchService = keywordSearchService;
         this.hybridSearchService = hybridSearchService;
         this.reRankerService = reRankerService;
+        this.searchExecutor = searchExecutor;
     }
 
     /**
@@ -41,8 +46,13 @@ public class RetrieverService {
         log.info("Query rewritten: {} -> {} search queries", query, rewrite.searchQueries().size());
 
         // 2. Parallel search (vector + keyword)
-        List<RetrievedDocument> vectorDocs = vectorSearchService.search(rewrite.searchQueries(), 10);
-        List<RetrievedDocument> keywordDocs = keywordSearchService.search(rewrite.rewrittenQuery(), 10);
+        CompletableFuture<List<RetrievedDocument>> vectorFuture = CompletableFuture.supplyAsync(
+                () -> vectorSearchService.search(rewrite.searchQueries(), 10), searchExecutor);
+        CompletableFuture<List<RetrievedDocument>> keywordFuture = CompletableFuture.supplyAsync(
+                () -> keywordSearchService.search(rewrite.rewrittenQuery(), 10), searchExecutor);
+
+        List<RetrievedDocument> vectorDocs = vectorFuture.join();
+        List<RetrievedDocument> keywordDocs = keywordFuture.join();
         log.info("Retrieved: {} vector + {} keyword = {} total",
                 vectorDocs.size(), keywordDocs.size(), vectorDocs.size() + keywordDocs.size());
 

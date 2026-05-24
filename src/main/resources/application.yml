@@ -87,6 +87,10 @@ app:
       source: 0.5
       time: 0.3
       type: 0.2
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
   security:
     jwt:
       secret: ${JWT_SECRET}

@@ -26,7 +26,9 @@ import reactor.core.publisher.Flux;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +44,7 @@ public class ChatService {
     private final ObjectMapper objectMapper;
     private final RagService ragService;
     private final SensitiveWordService sensitiveWordService;
+    private final ExecutorService chatExecutor;
 
     @Value("${app.chat.max-history:10}")
     private int maxHistory;
@@ -56,7 +59,8 @@ public class ChatService {
                        ChatClient.Builder chatClientBuilder,
                        ObjectMapper objectMapper,
                        RagService ragService,
-                       SensitiveWordService sensitiveWordService) {
+                       SensitiveWordService sensitiveWordService,
+                       ExecutorService chatExecutor) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.sessionService = sessionService;
@@ -65,6 +69,7 @@ public class ChatService {
         this.objectMapper = objectMapper;
         this.ragService = ragService;
         this.sensitiveWordService = sensitiveWordService;
+        this.chatExecutor = chatExecutor;
     }
 
     @Transactional
@@ -95,7 +100,6 @@ public class ChatService {
         final String msgId = userMsg.getMessageId();
         CompletableFuture.runAsync(() -> {
             try {
-                // Sensitive word check
                 if (sensitiveWordService.containsSensitiveWord(content)) {
                     sendEvent(emitter, "error",
                             new ChatEvent("error", null, "消息包含违规内容，无法回答", null, null, null));
@@ -119,7 +123,7 @@ public class ChatService {
                         new ChatEvent("error", null, errMsg, null, null, null));
                 emitter.complete();
             }
-        });
+        }, chatExecutor);
 
         return emitter;
     }
@@ -194,7 +198,8 @@ public class ChatService {
                             .stream()
                             .content();
                 })
-                .retryWhen(RetryUtils.fluxRetry("ChatStream"));
+                .retryWhen(RetryUtils.fluxRetry("ChatStream"))
+                .timeout(java.time.Duration.ofMillis(streamTimeout));
 
         flux.subscribe(
                 chunk -> {
@@ -240,9 +245,13 @@ public class ChatService {
         sessionService.incrementMessageCount(sessionId);
     }
 
-    public List<ChatMessageDTO> getMessageHistory(String sessionId) {
+    public List<ChatMessageDTO> getMessageHistory(String sessionId, Long userId) {
         ChatSession session = sessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SESSION_NOT_FOUND, "会话不存在"));
+
+        if (!Objects.equals(session.getUserId(), userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该会话");
+        }
 
         return messageRepository.findBySessionIdOrderByCreatedAtAsc(session.getId())
                 .stream()
