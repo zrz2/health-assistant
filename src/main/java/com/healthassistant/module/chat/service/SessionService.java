@@ -39,7 +39,7 @@ public class SessionService {
     }
 
     public Page<ChatSessionDTO> listSessions(Long userId, Pageable pageable) {
-        return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
+        return sessionRepository.findByUserIdAndStatusOrderByUpdatedAtDesc(userId, 1, pageable)
                 .map(this::toDTO);
     }
 
