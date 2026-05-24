@@ -83,7 +83,7 @@ public class User implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        String role = userType == 3 ? "ROLE_ADMIN" : userType == 2 ? "ROLE_STAFF" : "ROLE_USER";
+        String role = userType == 3 ? "ROLE_ADMIN" : "ROLE_USER";
         return List.of(new SimpleGrantedAuthority(role));
     }
 
