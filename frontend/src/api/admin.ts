@@ -83,11 +83,11 @@ export function getUser(id: number) {
 }
 
 export function updateUserStatus(id: number, status: number) {
-  return request.put(`/admin/users/${id}/status`, { status })
+  return request.put(`/admin/users/${id}/status`, null, { params: { status } })
 }
 
 export function updateUserRole(id: number, userType: number) {
-  return request.put(`/admin/users/${id}/role`, { userType })
+  return request.put(`/admin/users/${id}/role`, null, { params: { userType } })
 }
 
 // Knowledge
