@@ -52,6 +52,10 @@ export function getSourceDistribution() {
   return request.get('/admin/dashboard/source-distribution')
 }
 
+export function getRecentQueries() {
+  return request.get<{ id: number; content: string; sessionId: number; createdAt: string }[]>('/admin/dashboard/recent-queries')
+}
+
 // Users
 export function getUsers(params?: { page?: number; size?: number; keyword?: string }) {
   return request.get<{ records: AdminUser[]; total: number }>('/admin/users', { params })

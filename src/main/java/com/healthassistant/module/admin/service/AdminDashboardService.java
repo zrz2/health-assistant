@@ -3,17 +3,22 @@ package com.healthassistant.module.admin.service;
 import com.healthassistant.module.admin.dto.DailyTrendResponse;
 import com.healthassistant.module.admin.dto.DashboardStatsResponse;
 import com.healthassistant.module.admin.dto.SourceDistributionResponse;
+import com.healthassistant.module.chat.entity.ChatMessage;
 import com.healthassistant.module.chat.repository.ChatMessageRepository;
 import com.healthassistant.module.chat.repository.ChatSessionRepository;
 import com.healthassistant.module.knowledge.repository.KnowledgeItemRepository;
 import com.healthassistant.module.user.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AdminDashboardService {
@@ -89,5 +94,20 @@ public class AdminDashboardService {
                     .build());
         }
         return SourceDistributionResponse.builder().sources(sources).build();
+    }
+
+    public List<Map<String, Object>> getRecentQueries(int limit) {
+        Page<ChatMessage> page = messageRepository
+                .findByMessageTypeOrderByCreatedAtDesc(1, PageRequest.of(0, limit));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ChatMessage m : page.getContent()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", m.getId());
+            item.put("content", m.getContent());
+            item.put("sessionId", m.getSessionId());
+            item.put("createdAt", m.getCreatedAt().toString());
+            result.add(item);
+        }
+        return result;
     }
 }

@@ -92,15 +92,16 @@ onMounted(async () => {
     await nextTick()
     if (trendsChart.value && res.data) {
       const chart = echarts.init(trendsChart.value)
+      const msgTrend = res.data.messages || []
       chart.setOption({
         tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: res.data.dates || [] },
+        xAxis: { type: 'category', data: msgTrend.map((p: any) => p.date) },
         yAxis: { type: 'value' },
         series: [{
           name: '咨询量',
           type: 'line',
           smooth: true,
-          data: res.data.values || [],
+          data: msgTrend.map((p: any) => p.value),
           areaStyle: { opacity: 0.15 },
         }],
         grid: { left: 40, right: 20, top: 20, bottom: 30 },
@@ -118,9 +119,9 @@ onMounted(async () => {
         series: [{
           type: 'pie',
           radius: ['45%', '75%'],
-          data: (res.data || []).map((item: any) => ({
-            name: item.name,
-            value: item.value,
+          data: (res.data.sources || []).map((item: any) => ({
+            name: item.sourceName,
+            value: item.count,
           })),
         }],
       })

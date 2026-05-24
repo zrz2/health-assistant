@@ -55,6 +55,11 @@ public class AdminController {
         return Result.success(dashboardService.getSourceDistribution());
     }
 
+    @GetMapping("/dashboard/recent-queries")
+    public Result<List<Map<String, Object>>> getRecentQueries() {
+        return Result.success(dashboardService.getRecentQueries(20));
+    }
+
     // ==================== User Management ====================
 
     @GetMapping("/users")
