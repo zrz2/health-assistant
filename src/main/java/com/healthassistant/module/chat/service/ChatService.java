@@ -76,11 +76,6 @@ public class ChatService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该会话");
         }
 
-        // Sensitive word check
-        if (sensitiveWordService.containsSensitiveWord(content)) {
-            throw new BusinessException(ErrorCode.CONTENT_REJECTED, "消息包含违规内容");
-        }
-
         // Save user message (quick DB ops)
         ChatMessage userMsg = saveMessage(session.getId(), null, 1, content);
         sessionService.incrementMessageCount(session.getId());
@@ -100,6 +95,14 @@ public class ChatService {
         final String msgId = userMsg.getMessageId();
         CompletableFuture.runAsync(() -> {
             try {
+                // Sensitive word check
+                if (sensitiveWordService.containsSensitiveWord(content)) {
+                    sendEvent(emitter, "error",
+                            new ChatEvent("error", null, "消息包含违规内容，无法回答", null, null, null));
+                    emitter.complete();
+                    return;
+                }
+
                 ClarificationService.ClarificationResult clarification = clarificationService
                         .checkClarification(content, history);
 
@@ -110,8 +113,10 @@ public class ChatService {
                 }
             } catch (Exception e) {
                 log.error("Chat processing error for session {}", sessionId, e);
+                String errMsg = e instanceof BusinessException ? e.getMessage()
+                        : "抱歉，处理您的问题时出错了，请重试。";
                 sendEvent(emitter, "error",
-                        new ChatEvent("error", null, "抱歉，处理您的问题时出错了，请重试。", null, null, null));
+                        new ChatEvent("error", null, errMsg, null, null, null));
                 emitter.complete();
             }
         });

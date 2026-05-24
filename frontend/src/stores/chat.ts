@@ -147,7 +147,12 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        let errMsg = `HTTP ${response.status}`
+        try {
+          const body = await response.json()
+          if (body.message) errMsg = body.message
+        } catch { /* ignore */ }
+        throw new Error(errMsg)
       }
 
       const reader = response.body?.getReader()
@@ -213,8 +218,8 @@ export const useChatStore = defineStore('chat', () => {
       streamingContent.value = ''
     } catch (e: any) {
       const last = messages.value[messages.value.length - 1]
-      if (last && last.messageType === 2 && !last.content) {
-        last.content = '抱歉，回复生成失败，请重试。'
+      if (last && last.messageType === 2) {
+        last.content = e?.message || '抱歉，回复生成失败，请重试。'
       }
       isStreaming.value = false
       streamingContent.value = ''
