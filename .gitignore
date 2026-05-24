@@ -28,6 +28,10 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Test artifacts
+frontend/login.json
+frontend/token.txt
+
 # Application
 src/main/resources/application-local.yml
 src/main/resources/application-dev.yml
