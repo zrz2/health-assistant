@@ -28,10 +28,6 @@
           <el-icon><TrendCharts /></el-icon>
           <span>咨询统计</span>
         </el-menu-item>
-        <el-menu-item index="/admin/config">
-          <el-icon><Operation /></el-icon>
-          <span>系统配置</span>
-        </el-menu-item>
         <el-menu-item index="/admin/sensitive-words">
           <el-icon><WarningFilled /></el-icon>
           <span>敏感词管理</span>
@@ -80,7 +76,6 @@ const pageTitles: Record<string, string> = {
   '/admin/users': '用户管理',
   '/admin/knowledge': '知识库管理',
   '/admin/stats': '咨询统计',
-  '/admin/config': '系统配置',
   '/admin/sensitive-words': '敏感词管理',
   '/admin/logs': '操作日志',
 }

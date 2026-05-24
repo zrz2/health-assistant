@@ -51,15 +51,6 @@ export interface OperationLog {
   createdAt: string
 }
 
-export interface SystemConfig {
-  id: number
-  configKey: string
-  configValue: string
-  configType: string
-  description: string
-  category: string
-}
-
 // Dashboard
 export function getDashboardStats() {
   return request.get<DashboardStats>('/admin/dashboard/stats')
@@ -141,13 +132,4 @@ export function deleteSensitiveWord(id: number) {
 // Operation Logs
 export function getOperationLogs(params?: { page?: number; size?: number; keyword?: string }) {
   return request.get<{ records: OperationLog[]; total: number }>('/admin/operation-logs', { params })
-}
-
-// System Config
-export function getSystemConfigs() {
-  return request.get<SystemConfig[]>('/admin/config')
-}
-
-export function updateSystemConfig(data: Partial<SystemConfig>) {
-  return request.put('/admin/config', data)
 }
