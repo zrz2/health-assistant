@@ -78,7 +78,8 @@ public class ChatService {
     }
 
     @Transactional
-    public SseEmitter sendMessage(Long userId, String sessionIdStr, String content) {
+    public SseEmitter sendMessage(Long userId, String sessionIdStr, String content,
+                                   boolean skipClarification) {
         ChatSession session = sessionRepository.findBySessionId(sessionIdStr)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SESSION_NOT_FOUND, "会话不存在"));
 
@@ -91,6 +92,8 @@ public class ChatService {
         sessionService.incrementMessageCount(session.getId());
 
         // Get history and health profile
+        log.info("Processing message: userId={}, sessionId={}, hasHealthRecord={}",
+                userId, sessionIdStr, healthRecordRepository.findByUserId(userId).isPresent());
         String history = buildHistory(session.getId());
         String healthProfile = buildHealthProfile(userId);
 
@@ -105,6 +108,7 @@ public class ChatService {
         final Long sessionId = session.getId();
         final String msgId = userMsg.getMessageId();
         final String finalHealthProfile = healthProfile;
+        final boolean finalSkipClarification = skipClarification;
         CompletableFuture.runAsync(() -> {
             try {
                 if (sensitiveWordService.containsSensitiveWord(content)) {
@@ -114,13 +118,17 @@ public class ChatService {
                     return;
                 }
 
-                ClarificationService.ClarificationResult clarification = clarificationService
-                        .checkClarification(content, history);
-
-                if (clarification.needsClarification()) {
-                    handleClarification(emitter, session, msgId, clarification);
-                } else {
+                if (finalSkipClarification) {
                     handleStreamResponse(emitter, sessionId, content, history, finalHealthProfile, msgId);
+                } else {
+                    ClarificationService.ClarificationResult clarification = clarificationService
+                            .checkClarification(content, history, finalHealthProfile);
+
+                    if (clarification.needsClarification()) {
+                        handleClarification(emitter, session, msgId, clarification);
+                    } else {
+                        handleStreamResponse(emitter, sessionId, content, history, finalHealthProfile, msgId);
+                    }
                 }
             } catch (Exception e) {
                 log.error("Chat processing error for session {}", sessionId, e);
@@ -337,11 +345,14 @@ public class ChatService {
     }
 
     private String buildHealthProfile(Long userId) {
-        if (userId == null) return null;
+        if (userId == null) {
+            log.debug("No userId provided, skipping health profile");
+            return null;
+        }
 
         return healthRecordRepository.findByUserId(userId)
                 .map(record -> {
-                    log.debug("Found health record for userId={}", userId);
+                    log.info("Found health record for userId={}, injecting into prompt", userId);
                     StringBuilder sb = new StringBuilder();
                     sb.append("## 用户健康档案\n");
                     sb.append("以下是当前用户的健康信息，回答健康相关问题时必须结合这些信息给出个性化建议：\n");
@@ -370,7 +381,10 @@ public class ChatService {
 
                     return sb.toString();
                 })
-                .orElse(null);
+                .orElseGet(() -> {
+                    log.info("No health record found for userId={}", userId);
+                    return null;
+                });
     }
 
     private String buildClarificationData(String clarificationId,

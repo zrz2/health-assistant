@@ -75,7 +75,8 @@ public class ChatController {
     @PostMapping("/messages")
     public SseEmitter sendMessage(@Valid @RequestBody ChatMessageRequest request) {
         Long userId = getCurrentUserId();
-        return chatService.sendMessage(userId, request.getSessionId(), request.getContent());
+        return chatService.sendMessage(userId, request.getSessionId(), request.getContent(),
+                request.isSkipClarification());
     }
 
     @Operation(summary = "获取消息历史")

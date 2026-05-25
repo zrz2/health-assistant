@@ -174,10 +174,10 @@ export const useChatStore = defineStore('chat', () => {
     return cached
   }
 
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, skipClarification = false) {
     const pendingClarification = findPendingClarification()
     if (pendingClarification) {
-      addUserMessage(content)
+      // Don't show raw answer — the rewritten query will be shown instead
       await answerClarification(pendingClarification.clarificationData!.clarificationId, content)
       return
     }
@@ -196,7 +196,7 @@ export const useChatStore = defineStore('chat', () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify({ sessionId, content }),
+        body: JSON.stringify({ sessionId, content, skipClarification }),
       })
 
       if (!response.ok) {
@@ -306,7 +306,7 @@ export const useChatStore = defineStore('chat', () => {
         if (lastClarification) {
           lastClarification.clarificationData.answered = true
         }
-        await sendMessage(rewritten)
+        await sendMessage(rewritten, true)
       }
     } catch {
       // ignore
