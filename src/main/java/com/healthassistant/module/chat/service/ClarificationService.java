@@ -39,10 +39,10 @@ public class ClarificationService {
         this.objectMapper = objectMapper;
     }
 
-    public ClarificationResult checkClarification(String question, String history) {
+    public ClarificationResult checkClarification(String question, String history, String healthProfile) {
         try {
             ChatClient chatClient = chatClientBuilder.build();
-            String prompt = buildClarificationPrompt(question, history);
+            String prompt = buildClarificationPrompt(question, history, healthProfile);
 
             String response = RetryUtils.executeWithRetry(() ->
                     chatClient.prompt()
@@ -131,8 +131,9 @@ public class ClarificationService {
         }
     }
 
-    private String buildClarificationPrompt(String question, String history) {
-        return String.format("""
+    private String buildClarificationPrompt(String question, String history, String healthProfile) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
                 你是一个医疗问诊意图分析器。分析用户的问题，判断是否需要进一步澄清才能给出准确回答。
 
                 ## 需要澄清的情况（仅在以下情况触发）
@@ -144,7 +145,16 @@ public class ClarificationService {
                 2. 只是轻微缺少细节，但仍能给出有意义的通用建议
                 3. 用户描述的是通用健康咨询（如"高血压注意什么"）
                 4. 缺少的信息对回答影响不大（如血型、身高对感冒问题）
+                5. **重要**：如果用户询问自己的健康档案信息（如"我有什么慢性病"、"我对什么过敏"、"我吃什么药"），且下方已提供用户健康档案，则不需要澄清，应直接让系统从档案中提取答案
 
+                """);
+
+        if (healthProfile != null && !healthProfile.isEmpty()) {
+            sb.append("## 用户健康档案（已有的信息，无需追问）\n");
+            sb.append(healthProfile).append("\n\n");
+        }
+
+        sb.append(String.format("""
                 ## 对话历史
                 %s
 
@@ -153,7 +163,9 @@ public class ClarificationService {
 
                 ## 输出格式（严格JSON，不要输出其他内容）
                 {"needsClarification": true/false, "clarificationType": "...", "question": "...", "options": [...], "missingFields": [...]}
-                """, history, question);
+                """, history, question));
+
+        return sb.toString();
     }
 
     private ClarificationResult parseClarificationResponse(String response) {

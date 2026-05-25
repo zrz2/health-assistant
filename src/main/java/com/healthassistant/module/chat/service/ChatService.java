@@ -92,6 +92,8 @@ public class ChatService {
         sessionService.incrementMessageCount(session.getId());
 
         // Get history and health profile
+        log.info("Processing message: userId={}, sessionId={}, hasHealthRecord={}",
+                userId, sessionIdStr, healthRecordRepository.findByUserId(userId).isPresent());
         String history = buildHistory(session.getId());
         String healthProfile = buildHealthProfile(userId);
 
@@ -120,7 +122,7 @@ public class ChatService {
                     handleStreamResponse(emitter, sessionId, content, history, finalHealthProfile, msgId);
                 } else {
                     ClarificationService.ClarificationResult clarification = clarificationService
-                            .checkClarification(content, history);
+                            .checkClarification(content, history, finalHealthProfile);
 
                     if (clarification.needsClarification()) {
                         handleClarification(emitter, session, msgId, clarification);
