@@ -1,74 +1,94 @@
 <template>
   <div class="admin-page">
     <div class="page-header">
-      <h3>知识库管理</h3>
+      <div class="page-title">
+        <h2>知识库管理</h2>
+        <p>管理医疗健康知识条目</p>
+      </div>
       <div class="header-actions">
-        <el-input v-model="keyword" placeholder="搜索标题/内容" style="width: 240px;" :prefix-icon="Search" clearable @change="fetchData" />
-        <el-button type="primary" @click="showDialog()">添加知识</el-button>
-        <el-upload
-          accept=".json,.csv"
-          :show-file-list="false"
-          :http-request="handleImport"
-        >
-          <el-button>批量导入</el-button>
+        <el-input
+          v-model="keyword"
+          placeholder="搜索标题/内容"
+          style="width: 240px;"
+          :prefix-icon="Search"
+          clearable
+          @change="fetchData"
+        />
+        <el-button type="primary" @click="showDialog()">
+          <el-icon><Plus /></el-icon>
+          添加知识
+        </el-button>
+        <el-upload accept=".json,.csv" :show-file-list="false" :http-request="handleImport">
+          <el-button>
+            <el-icon><Upload /></el-icon>
+            批量导入
+          </el-button>
         </el-upload>
       </div>
     </div>
 
-    <el-table :data="items" v-loading="loading" stripe @selection-change="onSelectionChange">
-      <el-table-column type="selection" width="45" />
-      <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="sourceName" label="来源" width="140" />
-      <el-table-column label="类型" width="100">
-        <template #default="{ row }">
-          <el-tag size="small">{{ sourceTypeLabel(row.sourceType) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="证据等级" width="100">
-        <template #default="{ row }">
-          <el-tag :type="evidenceTag(row.evidenceLevel)" size="small">
-            Level {{ row.evidenceLevel }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="category" label="分类" width="100" />
-      <el-table-column label="状态" width="80">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
-            {{ row.status === 1 ? '启用' : '禁用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" width="180" />
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <el-button text type="primary" size="small" @click="showDialog(row)">编辑</el-button>
-          <el-button text type="danger" size="small" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-card">
+      <div v-if="selected.length" class="batch-bar">
+        <span>已选 {{ selected.length }} 条</span>
+        <el-button type="danger" size="small" plain @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          批量删除
+        </el-button>
+      </div>
 
-    <div class="pagination-wrap" v-if="selected.length">
-      <el-button type="danger" plain @click="handleBatchDelete">批量删除 ({{ selected.length }})</el-button>
-    </div>
-    <div class="pagination-wrap">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="size"
-        :total="total"
-        layout="total, prev, pager, next"
-        @current-change="fetchData"
-      />
+      <el-table :data="items" v-loading="loading" stripe @selection-change="onSelectionChange" class="data-table">
+        <el-table-column type="selection" width="45" />
+        <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="sourceName" label="来源" width="140" />
+        <el-table-column label="类型" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" round>{{ sourceTypeLabel(row.sourceType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="证据等级" width="110">
+          <template #default="{ row }">
+            <el-tag :type="evidenceTag(row.evidenceLevel)" size="small" round>
+              Level {{ row.evidenceLevel }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="category" label="分类" width="100" />
+        <el-table-column label="状态" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small" round>
+              {{ row.status === 1 ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="创建时间" width="180" />
+        <el-table-column label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="showDialog(row)">编辑</el-button>
+            <el-button text type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="pagination-wrap">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="size"
+          :total="total"
+          layout="total, prev, pager, next"
+          @current-change="fetchData"
+        />
+      </div>
     </div>
 
     <!-- Dialog -->
     <el-dialog
       :model-value="dialogVisible"
-      :title="editItem ? '编辑知识' : '添加知识'"
-      width="600px"
+      :title="editId ? '编辑知识' : '添加知识'"
+      width="580px"
       @close="dialogVisible = false"
+      class="knowledge-dialog"
     >
-      <el-form ref="formRef" :model="form" label-width="90px">
+      <el-form ref="formRef" :model="form" label-width="90px" class="dialog-form">
         <el-form-item label="标题">
           <el-input v-model="form.title" placeholder="知识标题" />
         </el-form-item>
@@ -81,21 +101,27 @@
         <el-form-item label="来源URL">
           <el-input v-model="form.sourceUrl" placeholder="https://..." />
         </el-form-item>
-        <el-form-item label="来源类型">
-          <el-select v-model="form.sourceType">
-            <el-option label="权威组织" :value="1" />
-            <el-option label="医疗机构" :value="2" />
-            <el-option label="学术期刊" :value="3" />
-            <el-option label="科普" :value="4" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="分类">
-          <el-input v-model="form.category" placeholder="例如：呼吸科" />
-        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="来源类型">
+              <el-select v-model="form.sourceType" style="width: 100%">
+                <el-option label="权威组织" :value="1" />
+                <el-option label="医疗机构" :value="2" />
+                <el-option label="学术期刊" :value="3" />
+                <el-option label="科普" :value="4" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="分类">
+              <el-input v-model="form.category" placeholder="例如：呼吸科" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">确认</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -103,7 +129,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Plus, Upload, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getKnowledgeItems,
@@ -155,8 +181,8 @@ async function fetchData() {
   try {
     const res = await getKnowledgeItems({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
-      items.value = res.data?.content || []
-      total.value = res.data?.totalElements || 0
+      items.value = res.data?.records || []
+      total.value = res.data?.total || 0
     }
   } catch { /* ignore */ } finally {
     loading.value = false
@@ -225,27 +251,77 @@ onMounted(() => fetchData())
 </script>
 
 <style scoped>
-.admin-page h3 {
-  font-size: 20px;
-  color: #303133;
+.admin-page {
+  max-width: 1400px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.page-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.page-title p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
+}
+
+.table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #eff6ff;
+  border-bottom: 1px solid var(--primary-border);
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.data-table {
+  --el-table-border-color: var(--border-light);
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-row-hover-bg-color: var(--bg-hover);
+}
+
+.data-table :deep(th) {
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .pagination-wrap {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
-  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-light);
+}
+
+.dialog-form :deep(.el-input__wrapper),
+.dialog-form :deep(.el-textarea__inner) {
+  border-radius: 8px !important;
 }
 </style>

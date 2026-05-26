@@ -1,30 +1,31 @@
 <template>
   <div class="admin-page">
     <div class="page-header">
-      <h3>咨询统计</h3>
+      <div class="page-title">
+        <h2>咨询统计</h2>
+        <p>用户咨询行为分析</p>
+      </div>
     </div>
 
-    <el-row :gutter="24">
-      <el-col :span="24">
-        <div class="chart-card">
-          <div class="chart-title">近7天咨询量</div>
-          <div ref="dailyChart" style="height: 300px;"></div>
-        </div>
-      </el-col>
-    </el-row>
+    <div class="chart-card" style="margin-bottom: 20px;">
+      <div class="chart-header">
+        <div class="chart-title">近7天咨询量</div>
+        <div class="chart-subtitle">每日咨询消息数量趋势</div>
+      </div>
+      <div ref="dailyChart" class="chart-body"></div>
+    </div>
 
-    <el-row :gutter="24" style="margin-top: 24px;">
-      <el-col :span="24">
-        <div class="chart-card">
-          <div class="chart-title">用户最新提问</div>
-          <el-table :data="recentQueries" stripe v-loading="loading" max-height="500">
-            <el-table-column type="index" label="#" width="50" />
-            <el-table-column prop="content" label="提问内容" min-width="400" show-overflow-tooltip />
-            <el-table-column prop="createdAt" label="提问时间" width="180" />
-          </el-table>
-        </div>
-      </el-col>
-    </el-row>
+    <div class="table-card">
+      <div class="table-header">
+        <div class="chart-title">用户最新提问</div>
+        <div class="chart-subtitle">最近收到的用户咨询问题</div>
+      </div>
+      <el-table :data="recentQueries" stripe v-loading="loading" max-height="500" class="data-table">
+        <el-table-column type="index" label="#" width="50" />
+        <el-table-column prop="content" label="提问内容" min-width="400" show-overflow-tooltip />
+        <el-table-column prop="createdAt" label="提问时间" width="180" />
+      </el-table>
+    </div>
   </div>
 </template>
 
@@ -38,7 +39,6 @@ const recentQueries = ref<any[]>([])
 const loading = ref(false)
 
 onMounted(async () => {
-  // Daily consultation volume chart
   try {
     const res = await getDashboardTrends()
     await nextTick()
@@ -46,22 +46,35 @@ onMounted(async () => {
       const msgTrend = res.data.messages || []
       const chart = echarts.init(dailyChart.value)
       chart.setOption({
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: msgTrend.map((p: any) => p.date) },
-        yAxis: { type: 'value' },
+        tooltip: { trigger: 'axis', backgroundColor: '#1e293b', borderColor: '#334155', textStyle: { color: '#e2e8f0' } },
+        grid: { left: 50, right: 20, top: 20, bottom: 30 },
+        xAxis: {
+          type: 'category',
+          data: msgTrend.map((p: any) => p.date),
+          axisLine: { lineStyle: { color: '#e5e7eb' } },
+          axisLabel: { color: '#9ca3af', fontSize: 12 },
+        },
+        yAxis: {
+          type: 'value',
+          splitLine: { lineStyle: { color: '#f3f4f6' } },
+          axisLabel: { color: '#9ca3af', fontSize: 12 },
+        },
         series: [{
           name: '咨询量',
-          type: 'line',
-          smooth: true,
+          type: 'bar',
           data: msgTrend.map((p: any) => p.value),
-          areaStyle: { opacity: 0.15 },
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#2563eb' },
+              { offset: 1, color: '#7c3aed' },
+            ]),
+            borderRadius: [4, 4, 0, 0],
+          },
         }],
-        grid: { left: 50, right: 20, top: 20, bottom: 30 },
       })
     }
   } catch { /* ignore */ }
 
-  // Recent user queries
   loading.value = true
   try {
     const res = await getRecentQueries()
@@ -73,29 +86,76 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.admin-page h3 {
-  font-size: 20px;
-  color: #303133;
+.admin-page {
+  max-width: 1400px;
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+}
+
+.page-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.page-title p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .chart-card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 24px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 20px 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.chart-header, .table-header {
+  margin-bottom: 16px;
 }
 
 .chart-title {
-  font-size: 16px;
-  color: #303133;
-  margin-bottom: 16px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.chart-body {
+  height: 280px;
+}
+
+.table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.table-header {
+  padding: 20px 24px 0;
+}
+
+.data-table {
+  --el-table-border-color: var(--border-light);
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-row-hover-bg-color: var(--bg-hover);
+}
+
+.data-table :deep(th) {
+  font-weight: 600;
+  font-size: 13px;
 }
 </style>

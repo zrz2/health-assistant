@@ -39,7 +39,7 @@ instance.interceptors.response.use(
         isRefreshing = true
         try {
           const res = await axios.post('/api/v1/auth/refresh', { refreshToken })
-          const newToken = res.data.data.token
+          const newToken = res.data.data.accessToken
           localStorage.setItem('token', newToken)
           pendingRequests.forEach((cb) => cb(newToken))
           pendingRequests = []

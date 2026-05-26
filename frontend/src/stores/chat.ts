@@ -65,11 +65,12 @@ export const useChatStore = defineStore('chat', () => {
       const res = await getMessages(sessionId)
       const list = res.data || []
       messageCache.set(sessionId, list)
-      if (currentSessionId.value === sessionId) {
+      // Don't overwrite messages if we're currently streaming into this session
+      if (currentSessionId.value === sessionId && !isStreaming.value) {
         messages.value = list
       }
     } catch {
-      if (currentSessionId.value === sessionId) {
+      if (currentSessionId.value === sessionId && !isStreaming.value) {
         messages.value = []
       }
     }
@@ -182,10 +183,12 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    addUserMessage(content)
-    const placeholderId = addAssistantPlaceholder()
+    // Mark streaming immediately so loadMessages won't overwrite our optimistic messages
     isStreaming.value = true
     streamingContent.value = ''
+
+    addUserMessage(content)
+    const placeholderId = addAssistantPlaceholder()
 
     const sessionId = currentSessionId.value!
 

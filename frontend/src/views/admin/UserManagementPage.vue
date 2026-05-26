@@ -1,49 +1,69 @@
 <template>
   <div class="admin-page">
     <div class="page-header">
-      <h3>用户管理</h3>
-      <el-input v-model="keyword" placeholder="搜索用户名/昵称" style="width: 240px;" :prefix-icon="Search" clearable @change="fetchData" />
+      <div class="page-title">
+        <h2>用户管理</h2>
+        <p>管理系统注册用户</p>
+      </div>
+      <el-input
+        v-model="keyword"
+        placeholder="搜索用户名/昵称"
+        style="width: 260px;"
+        :prefix-icon="Search"
+        clearable
+        @change="fetchData"
+      />
     </div>
 
-    <el-table :data="users" v-loading="loading" stripe>
-      <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="username" label="用户名" width="140" />
-      <el-table-column prop="nickname" label="昵称" width="140" />
-      <el-table-column prop="email" label="邮箱" />
-      <el-table-column prop="phone" label="手机号" width="140" />
-      <el-table-column label="角色" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.userType === 3 ? 'danger' : ''" size="small">
-            {{ row.userType === 3 ? '管理员' : '普通用户' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="80">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
-            {{ row.status === 1 ? '正常' : '禁用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="lastLoginTime" label="最后登录" width="180" />
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <el-button text type="primary" size="small" @click="toggleStatus(row)">
-            {{ row.status === 1 ? '禁用' : '启用' }}
-          </el-button>
-          <el-button text size="small" @click="changeRole(row)">改角色</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-card">
+      <el-table :data="users" v-loading="loading" stripe class="data-table">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="username" label="用户名" width="140" />
+        <el-table-column prop="nickname" label="昵称" width="140" />
+        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="phone" label="手机号" width="140" />
+        <el-table-column label="角色" width="100">
+          <template #default="{ row }">
+            <el-tag
+              :type="row.userType === 3 ? 'danger' : 'info'"
+              size="small"
+              round
+            >
+              {{ row.userType === 3 ? '管理员' : '普通用户' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="80">
+          <template #default="{ row }">
+            <el-tag
+              :type="row.status === 1 ? 'success' : 'danger'"
+              size="small"
+              round
+            >
+              {{ row.status === 1 ? '正常' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lastLoginTime" label="最后登录" width="180" />
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="toggleStatus(row)">
+              {{ row.status === 1 ? '禁用' : '启用' }}
+            </el-button>
+            <el-button text size="small" @click="changeRole(row)">改角色</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <div class="pagination-wrap">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="size"
-        :total="total"
-        layout="total, prev, pager, next"
-        @current-change="fetchData"
-      />
+      <div class="pagination-wrap">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="size"
+          :total="total"
+          layout="total, prev, pager, next"
+          @current-change="fetchData"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -66,8 +86,8 @@ async function fetchData() {
   try {
     const res = await getUsers({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
-      users.value = res.data?.content || []
-      total.value = res.data?.totalElements || 0
+      users.value = res.data?.records || []
+      total.value = res.data?.total || 0
     }
   } catch { /* ignore */ } finally {
     loading.value = false
@@ -103,21 +123,54 @@ onMounted(() => fetchData())
 </script>
 
 <style scoped>
-.admin-page h3 {
-  font-size: 20px;
-  color: #303133;
+.admin-page {
+  max-width: 1400px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.page-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.page-title p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.data-table {
+  --el-table-border-color: var(--border-light);
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-row-hover-bg-color: var(--bg-hover);
+}
+
+.data-table :deep(th) {
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .pagination-wrap {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-light);
 }
 </style>
