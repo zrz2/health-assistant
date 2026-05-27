@@ -197,6 +197,16 @@ public class EmbeddingPipelineService {
         return parentDocId + "_parent_" + sanitized;
     }
 
+    private int resolveEvidenceLevel(KnowledgeItem item, MetadataExtractor.ExtractedMetadata metadata) {
+        if (item.getEvidenceLevel() != null) return item.getEvidenceLevel();
+        return 2; // default evidence level
+    }
+
+    private String resolveDocumentType(KnowledgeItem item, MetadataExtractor.ExtractedMetadata metadata) {
+        if (item.getDocumentType() != null && !item.getDocumentType().isBlank()) return item.getDocumentType();
+        return metadata.documentType() != null ? metadata.documentType() : "health_encyclopedia";
+    }
+
     private float[] embed(String text) {
         try {
             var request = new EmbeddingRequest(List.of(text), null);

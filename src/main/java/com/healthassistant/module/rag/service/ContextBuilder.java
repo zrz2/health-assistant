@@ -3,6 +3,7 @@ package com.healthassistant.module.rag.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.healthassistant.module.rag.dto.RetrievedDocument;
+import com.healthassistant.module.rag.dto.SourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -233,13 +234,26 @@ public class ContextBuilder {
     }
 
     /**
-     * Extract unique source names from a document list.
+     * Extract up to 5 unique source references from retrieved documents
+     * as structured objects for frontend display.
      */
-    public List<String> extractSources(List<RetrievedDocument> documents) {
+    public List<SourceInfo> extractSources(List<RetrievedDocument> documents) {
         return documents.stream()
-                .map(RetrievedDocument::getSourceName)
-                .filter(s -> s != null && !s.isBlank())
-                .distinct()
+                .filter(d -> d.getSourceName() != null && !d.getSourceName().isBlank())
+                .collect(Collectors.toMap(
+                        RetrievedDocument::getSourceName, // key: source name
+                        d -> {
+                            String title = d.getContent() != null && !d.getContent().isBlank()
+                                    ? (d.getContent().length() > 80
+                                            ? d.getContent().substring(0, 80).replace("\n", " ") + "..."
+                                            : d.getContent().replace("\n", " "))
+                                    : d.getSourceName();
+                            return new SourceInfo(title, null, d.getSourceName());
+                        },
+                        (existing, replacement) -> existing, // dedup by source name
+                        LinkedHashMap::new))
+                .values().stream()
+                .limit(5)
                 .collect(Collectors.toList());
     }
 

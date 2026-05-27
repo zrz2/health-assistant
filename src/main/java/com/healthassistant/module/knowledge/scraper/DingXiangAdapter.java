@@ -19,7 +19,7 @@ public class DingXiangAdapter implements SourceAdapter {
     // 已知可用的文章URL（静态HTML，可直接抓取）
     private static final List<String> KNOWN_ARTICLE_URLS = Arrays.asList(
             "https://dxy.com/article/7149",   // 血压测量
-            "https://dxy.com/article/8023",   // 二甲双胍
+            "https://dxy.com/article/8023"   // 二甲双胍
             // 可继续添加其他已验证的URL
     );
 

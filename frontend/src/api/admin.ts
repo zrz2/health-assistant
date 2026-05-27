@@ -58,7 +58,7 @@ export function getRecentQueries() {
 
 // Users
 export function getUsers(params?: { page?: number; size?: number; keyword?: string }) {
-  return request.get<{ records: AdminUser[]; total: number }>('/admin/users', { params })
+  return request.get<{ content: AdminUser[]; totalElements: number }>('/admin/users', { params })
 }
 
 export function getUser(id: number) {
@@ -75,7 +75,7 @@ export function updateUserRole(id: number, userType: number) {
 
 // Knowledge
 export function getKnowledgeItems(params?: { page?: number; size?: number; keyword?: string }) {
-  return request.get<{ records: KnowledgeItem[]; total: number }>('/admin/knowledge/items', { params })
+  return request.get<{ content: KnowledgeItem[]; totalElements: number }>('/admin/knowledge/items', { params })
 }
 
 export function getKnowledgeItem(docId: string) {

@@ -19,7 +19,12 @@ public class HealthAssistantApplication {
 
     public static void main(String[] args) {
         loadDotenv();
-        SpringApplication.run(HealthAssistantApplication.class, args);
+        try {
+            SpringApplication.run(HealthAssistantApplication.class, args);
+        } catch (Throwable e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
     }
 
     private static void loadDotenv() {

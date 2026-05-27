@@ -47,14 +47,16 @@ spring:
 
   # Spring AI（DashScope + Elasticsearch VectorStore）
   ai:
+
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
       chat:
         enabled: true
         options:
-          model: qwen-max
+          model: deepseek-v3
           temperature: 0.7
           max-tokens: 2048
+        timeout: 120s
       embedding:
         enabled: true
         options:
@@ -136,6 +138,10 @@ app:
       中华医学期刊网: 4
       医脉通: 3
       A+医学百科: 2
+
+  evaluation:
+    python-path: python
+    script-path: scripts/evaluate_ragas.py
 
 # SpringDoc
 springdoc:

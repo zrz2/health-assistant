@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.healthassistant.module.rag.dto.SourceInfo;
 import java.util.List;
 
 @Service
@@ -47,7 +48,7 @@ public class RagService {
 
             // Build context from retrieved documents with parent expansion
             String context = contextBuilder.buildWithParentContext(result.documents());
-            List<String> sources = contextBuilder.extractSources(result.documents());
+            List<SourceInfo> sources = contextBuilder.extractSources(result.documents());
 
             // Build RAG-augmented prompt
             String prompt = buildRagPrompt(question, history, context);
@@ -60,7 +61,7 @@ public class RagService {
         }
     }
 
-    private String buildRagPrompt(String question, String history, String context) {
+    public String buildRagPrompt(String question, String history, String context) {
         return String.format("""
                 你是一个专业的医疗健康助手。请基于以下医学知识参考回答用户的问题。
 
@@ -75,11 +76,11 @@ public class RagService {
 
                 ## 回答规则
                 1. 优先基于上述医学知识参考回答问题
-                2. 如果知识与问题相关，引用文献编号（如【文献1】）
-                3. 如果提供了用户健康档案，必须结合档案信息给出个性化建议，档案信息优先于通用知识
-                4. 如果没有足够信息，诚实说明并建议咨询医生
-                5. 你不是医生，不能进行诊断，回答仅供参考
-                6. 保持专业、客观、严谨
+                2. 如果提供了用户健康档案，必须结合档案信息给出个性化建议，档案信息优先于通用知识
+                3. 如果没有足够信息，诚实说明并建议咨询医生
+                4. 你不是医生，不能进行诊断，回答仅供参考
+                5. 保持专业、客观、严谨
+                6. 不要在回答中使用【文献X】等编号标记，直接回答即可
 
                 ## 免责声明
                 %s
@@ -87,5 +88,5 @@ public class RagService {
     }
 
     public record RagResult(String prompt, RetrieverService.RetrieveResult retrieveResult,
-                             List<String> sources) {}
+                             List<SourceInfo> sources) {}
 }

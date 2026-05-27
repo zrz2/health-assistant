@@ -14,6 +14,7 @@ import com.healthassistant.module.chat.repository.ChatMessageRepository;
 import com.healthassistant.module.chat.repository.ChatSessionRepository;
 import com.healthassistant.module.user.entity.HealthRecord;
 import com.healthassistant.module.user.repository.HealthRecordRepository;
+import com.healthassistant.module.rag.dto.SourceInfo;
 import com.healthassistant.module.rag.service.RagService;
 import com.healthassistant.common.util.RetryUtils;
 import org.slf4j.Logger;
@@ -192,14 +193,12 @@ public class ChatService {
         // Try RAG augmentation
         RagService.RagResult ragResult = ragService.augmentPrompt(question, history);
         String prompt;
-        String sources = null;
+        List<SourceInfo> sources = null;
 
         if (ragResult != null) {
             prompt = ragResult.prompt();
-            if (!ragResult.sources().isEmpty()) {
-                sources = String.join(", ", ragResult.sources());
-            }
-            log.info("Using RAG-augmented prompt with {} sources", ragResult.sources().size());
+            sources = ragResult.sources();
+            log.info("Using RAG-augmented prompt with {} sources", sources.size());
         } else {
             prompt = buildQaPrompt(question, history, healthProfile);
         }
@@ -213,7 +212,7 @@ public class ChatService {
         }
 
         final String finalPrompt = prompt;
-        final String finalSources = sources;
+        final List<SourceInfo> finalSources = sources;
         StringBuilder fullContent = new StringBuilder();
 
         Flux<String> flux = Flux.defer(() -> {
@@ -417,7 +416,7 @@ public class ChatService {
     }
 
     public record ChatEvent(String type, String clarificationId, String content,
-                             String options, String clarificationType, String sources) {}
+                             String options, String clarificationType, List<SourceInfo> sources) {}
 
     public record ClarificationEventData(String clarificationId, String clarificationType,
                                           String question, String options, String missingFields) {}

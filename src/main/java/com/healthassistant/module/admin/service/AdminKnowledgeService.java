@@ -131,7 +131,8 @@ public class AdminKnowledgeService {
                 }
                 KnowledgeItem item = knowledgeService.create(
                         article.getTitle(), article.getContent(), docType,
-                        sourceName, article.getSourceUrl(), pubDate, null);
+                        sourceName, article.getSourceUrl(), pubDate,
+                        request.getEvidenceLevel());
                 knowledgeService.indexItem(item.getDocId());
                 success++;
             } catch (Exception e) {

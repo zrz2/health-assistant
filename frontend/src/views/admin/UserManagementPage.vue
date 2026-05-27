@@ -86,8 +86,8 @@ async function fetchData() {
   try {
     const res = await getUsers({ page: page.value - 1, size: size.value, keyword: keyword.value })
     if (res.data) {
-      users.value = res.data?.records || []
-      total.value = res.data?.total || 0
+      users.value = res.data?.content || []
+      total.value = res.data?.totalElements || 0
     }
   } catch { /* ignore */ } finally {
     loading.value = false

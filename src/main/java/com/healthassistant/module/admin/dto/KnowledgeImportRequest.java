@@ -51,6 +51,7 @@ public class KnowledgeImportRequest {
         @NotBlank(message = "来源名称不能为空")
         private String sourceName;
         private String documentType;
+        private Integer evidenceLevel;
         private List<Article> articles;
     }
 }

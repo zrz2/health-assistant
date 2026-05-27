@@ -36,7 +36,7 @@ public class CdcAdapter implements SourceAdapter {
             "https://ncncd.chinacdc.cn/zxdt/202512/t20251201_313921.htm",
             "https://ncncd.chinacdc.cn/zxdt/202509/t20250922_313888.htm",
             "https://ncncd.chinacdc.cn/zxdt/202511/t20251128_313915.htm",
-            "https://ncncd.chinacdc.cn/zxdt/202605/t20260519_1835912.htm",
+            "https://ncncd.chinacdc.cn/zxdt/202605/t20260519_1835912.htm"
     );
 
     private final HttpService httpService;
