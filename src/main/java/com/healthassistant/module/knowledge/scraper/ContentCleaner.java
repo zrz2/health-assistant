@@ -3,18 +3,21 @@ package com.healthassistant.module.knowledge.scraper;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.safety.Safelist;
 import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class ContentCleaner {
 
     private static final Logger log = LoggerFactory.getLogger(ContentCleaner.class);
 
-    // Elements to remove before extracting text
+    // 需要移除的无用元素选择器
     private static final String[] REMOVE_SELECTORS = {
             "script", "style", "noscript", "iframe", "svg", "canvas",
             "nav", "header", "footer", ".nav", ".header", ".footer",
@@ -24,10 +27,18 @@ public class ContentCleaner {
             "form", "input", "button", "select", "textarea"
     };
 
+    // 站点特定的内容选择器映射
+    private final Map<String, String[]> siteContentSelectors = new HashMap<>();
+
+    public void registerSiteSelectors(String domain, String... selectors) {
+        siteContentSelectors.put(domain, selectors);
+        log.debug("Registered content selectors for domain: {}", domain);
+    }
+
     public CleanResult clean(String html, String url) {
         Document doc = Jsoup.parse(html, url);
 
-        // Remove noisy elements
+        // 移除噪音元素
         for (String selector : REMOVE_SELECTORS) {
             Elements elements = doc.select(selector);
             for (Element el : elements) {
@@ -35,14 +46,11 @@ public class ContentCleaner {
             }
         }
 
-        // Extract metadata from <head>
         String title = extractTitle(doc);
         String publishDate = extractPublishDate(doc);
+        String bodyText = extractMainContent(doc, url);
 
-        // Extract main content text
-        String bodyText = extractMainContent(doc);
-
-        // Clean whitespace
+        // 清理多余空白
         bodyText = bodyText.replaceAll("\\n{3,}", "\n\n").trim();
 
         int originalLen = html.length();
@@ -54,7 +62,6 @@ public class ContentCleaner {
     }
 
     private String extractTitle(Document doc) {
-        // Try og:title first, then <title>, then h1
         Element ogTitle = doc.selectFirst("meta[property=og:title]");
         if (ogTitle != null && !ogTitle.attr("content").isBlank()) {
             return ogTitle.attr("content").trim();
@@ -62,7 +69,6 @@ public class ContentCleaner {
 
         String title = doc.title();
         if (title != null && !title.isBlank()) {
-            // Remove site name suffix like " - WHO" or " | 丁香医生"
             title = title.replaceAll("\\s*[-–|｜]\\s*.+$", "").trim();
             return title;
         }
@@ -72,7 +78,6 @@ public class ContentCleaner {
     }
 
     private String extractPublishDate(Document doc) {
-        // Try common meta tags for publication date
         String[] selectors = {
                 "meta[name=pubdate]", "meta[name=publish_date]",
                 "meta[property=article:published_time]",
@@ -94,46 +99,113 @@ public class ContentCleaner {
         return null;
     }
 
-    private String extractMainContent(Document doc) {
-        // Try common main content containers first
-        String[] contentSelectors = {
-                "article", "main", "[role=main]",
-                ".article-content", ".post-content", ".entry-content",
-                ".content-body", ".main-content", "#content",
-                ".factsheet-content", ".detail-content"
-        };
+    private String extractMainContent(Document doc, String url) {
+        String domain = extractDomain(url);
+        Element container = null;
 
-        for (String sel : contentSelectors) {
-            Element container = doc.selectFirst(sel);
-            if (container != null) {
-                String text = container.text();
-                if (text.length() > 200) {
-                    return text;
+        // 1. 优先使用站点特定选择器
+        if (siteContentSelectors.containsKey(domain)) {
+            for (String sel : siteContentSelectors.get(domain)) {
+                container = doc.selectFirst(sel);
+                if (container != null && container.text().length() > 200) {
+                    log.debug("Using site-specific selector '{}' for {}", sel, domain);
+                    break;
                 }
             }
         }
 
-        // Fallback: extract from <body> using paragraph-based approach
-        Elements paragraphs = doc.select("p, li, h1, h2, h3, h4, h5, h6, blockquote, .paragraph");
-        if (!paragraphs.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            for (Element p : paragraphs) {
-                String text = p.text().trim();
-                if (text.length() > 10 && !isNoise(text)) {
-                    // Preserve heading hierarchy
-                    if (p.tagName().matches("h[1-6]")) {
-                        sb.append("\n").append(text).append("\n");
-                    } else {
-                        sb.append(text).append("\n\n");
-                    }
+        // 2. 通用内容容器
+        if (container == null) {
+            String[] contentSelectors = {
+                    "article", "main", "[role=main]",
+                    ".article-content", ".post-content", ".entry-content",
+                    ".content-body", ".main-content", "#content",
+                    ".factsheet-content", ".detail-content"
+            };
+            for (String sel : contentSelectors) {
+                container = doc.selectFirst(sel);
+                if (container != null && container.text().length() > 200) {
+                    break;
                 }
             }
-            return sb.toString().trim();
         }
 
-        // Last resort: body text
+        // 3. 如果找到容器，使用 preserveStructure 提取结构化的纯文本
+        if (container != null) {
+            return preserveStructure(container);
+        }
+
+        // 4. 后备方案：提取所有正文块（段落、标题、列表、表格）
+        Elements elements = doc.select("p, li, h1, h2, h3, h4, h5, h6, blockquote, table, ul, ol");
+        if (!elements.isEmpty()) {
+            // 创建一个临时容器包裹这些元素，以便复用 preserveStructure
+            Element wrapper = new Element("div");
+            for (Element el : elements) {
+                wrapper.appendChild(el.clone());
+            }
+            return preserveStructure(wrapper);
+        }
+
+        // 5. 最后回退：整个 body 文本
         Element body = doc.body();
         return body != null ? body.text() : "";
+    }
+
+    /**
+     * 保留 HTML 结构的纯文本转换（表格→制表符分隔、列表→标记、标题→换行）
+     */
+    private String preserveStructure(Element container) {
+        Element clone = container.clone();
+
+        // 处理表格：转为制表符分隔的文本，保留行列结构
+        Elements tables = clone.select("table");
+        for (Element table : tables) {
+            StringBuilder sb = new StringBuilder("\n");
+            Elements rows = table.select("tr");
+            for (Element row : rows) {
+                Elements cells = row.select("th,td");
+                for (int i = 0; i < cells.size(); i++) {
+                    sb.append(cells.get(i).text());
+                    if (i < cells.size() - 1) sb.append("\t");
+                }
+                sb.append("\n");
+            }
+            // 安全替换：用纯文本块替换整个表格，避免破坏 HTML 结构
+            table.text(sb.toString());
+        }
+
+        // 处理无序列表：每项前加短横线
+        Elements uls = clone.select("ul");
+        for (Element ul : uls) {
+            for (Element li : ul.select("li")) {
+                String original = li.text();
+                li.text("- " + original);
+            }
+        }
+
+        // 处理有序列表：每项前加数字序号
+        Elements ols = clone.select("ol");
+        for (Element ol : ols) {
+            int idx = 1;
+            for (Element li : ol.select("li")) {
+                String original = li.text();
+                li.text(idx++ + ". " + original);
+            }
+        }
+
+        // 提取纯文本并规范化换行
+        String text = clone.text();
+        return text.replaceAll("\\s*\n\\s*", "\n").replaceAll("\n{2,}", "\n\n");
+    }
+
+    private String extractDomain(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            if (host == null) return "";
+            return host.replaceAll("^www\\.", "");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private boolean isNoise(String text) {

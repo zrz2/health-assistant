@@ -3,49 +3,27 @@ package com.healthassistant.module.knowledge.scraper;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-/**
- * DingXiang Doctor (丁香医生) public health articles adapter.
- * Fetches from:
- * - https://dxy.com/ (health encyclopedia)
- * - https://health.dxy.com/ (health articles)
- *
- * Note: DingXiang Doctor is a commercial platform. Only public,
- * openly accessible articles are fetched. Evidence level is lower
- * than official health authorities.
- */
 @Component
 public class DingXiangAdapter implements SourceAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(DingXiangAdapter.class);
 
-    private static final String DX_HEALTH_INDEX = "https://dxy.com/";
-    private static final String DX_HEALTH_ARTICLE_BASE = "https://dxy.com/article/";
+    // 已知可用的文章URL（静态HTML，可直接抓取）
+    private static final List<String> KNOWN_ARTICLE_URLS = Arrays.asList(
+            "https://dxy.com/article/7149",   // 血压测量
+            "https://dxy.com/article/8023",   // 二甲双胍
+            // 可继续添加其他已验证的URL
+    );
 
-    // Known public health topic areas on DingXiang
-    private static final String[] KNOWN_TOPIC_URLS = {
-            "https://dxy.com/column/1",     // General health
-            "https://dxy.com/column/2",     // Disease
-            "https://dxy.com/column/3",     // Medication
-            "https://dxy.com/column/4",     // Nutrition
-            "https://dxy.com/column/5",     // Maternal
-            "https://dxy.com/column/6",     // Chronic disease
-    };
-
-    // Known working public article URLs on DingXiang (note: site uses JS rendering,
-    // most URLs need to be discovered via browser automation; these are verified working)
-    private static final String[] SAMPLE_ARTICLE_URLS = {
-            "https://dxy.com/article/7149",
-            "https://dxy.com/article/8023",
-    };
-
+    // 保留构造函数（不再用于动态发现，仅为依赖注入）
     private final HttpService httpService;
     private final ContentCleaner contentCleaner;
 
@@ -65,59 +43,37 @@ public class DingXiangAdapter implements SourceAdapter {
 
     @Override
     public List<String> discoverUrls() {
-        List<String> urls = new ArrayList<>();
-
-        // Try column pages first
-        for (String columnUrl : KNOWN_TOPIC_URLS) {
-            String html = httpService.fetchQuietly(columnUrl);
-            if (html != null) {
-                Document doc = Jsoup.parse(html, columnUrl);
-                Elements articleLinks = doc.select(
-                        "a[href*='/article/'], a[href*='/know/'], .article-item a, .post-item a");
-                for (Element link : articleLinks) {
-                    String href = link.absUrl("href");
-                    if (href.contains("dxy.com/") && !urls.contains(href)) {
-                        urls.add(href);
-                    }
-                }
-                if (!urls.isEmpty()) {
-                    log.info("DingXiang: discovered {} article URLs from {}", urls.size(), columnUrl);
-                    break;
-                }
-            }
-        }
-
-        // Fallback: use known article URLs
-        if (urls.isEmpty()) {
-            log.info("DingXiang: using fallback article URLs");
-            for (String url : SAMPLE_ARTICLE_URLS) {
-                urls.add(url);
-            }
-        }
-
-        return urls.subList(0, Math.min(urls.size(), maxArticlesPerRun()));
+        log.info("DingXiang: using {} manually curated article URLs (JS-rendered pages skipped)", KNOWN_ARTICLE_URLS.size());
+        return new ArrayList<>(KNOWN_ARTICLE_URLS);
     }
 
     @Override
     public ParsedMetadata parseMetadata(ContentCleaner.CleanResult cleaned, String html) {
         Document doc = Jsoup.parse(html);
 
-        // DingXiang often has structured metadata
+        // 提取发布日期
         String pubDate = cleaned.publishDate();
         if (pubDate == null) {
-            Element timeEl = doc.selectFirst(
-                    ".article-time, .post-time, time, meta[property=article:published_time]");
-            if (timeEl != null) {
-                pubDate = timeEl.hasAttr("datetime") ? timeEl.attr("datetime")
-                        : timeEl.hasAttr("content") ? timeEl.attr("content")
-                        : timeEl.text().trim();
-                if (pubDate.length() >= 10) {
-                    pubDate = pubDate.substring(0, 10);
+            // 优先从meta标签获取
+            Element dateMeta = doc.selectFirst("meta[property=article:published_time]");
+            if (dateMeta != null) {
+                pubDate = dateMeta.attr("content");
+            }
+            if (pubDate == null || pubDate.isBlank()) {
+                // 备用选择器
+                Element timeEl = doc.selectFirst(".article-time, .post-time, time");
+                if (timeEl != null) {
+                    pubDate = timeEl.hasAttr("datetime") ? timeEl.attr("datetime")
+                            : timeEl.hasAttr("content") ? timeEl.attr("content")
+                            : timeEl.text().trim();
                 }
+            }
+            if (pubDate != null && pubDate.length() >= 10) {
+                pubDate = pubDate.substring(0, 10);
             }
         }
 
-        // Determine article category for document type
+        // 确定文档类型
         String docType = "health_encyclopedia";
         Element category = doc.selectFirst(".article-category, .post-category, .breadcrumb");
         if (category != null) {
@@ -131,12 +87,18 @@ public class DingXiangAdapter implements SourceAdapter {
             }
         }
 
-        // Evidence level: DingXiang is a commercial health media platform
-        // Default 2, but can be higher for physician-authored content
+        // 证据等级：默认2，如果提及指南则提升到3
         int evidenceLevel = getDefaultEvidenceLevel();
         String bodyLower = cleaned.content().toLowerCase();
         if (bodyLower.contains("指南") || bodyLower.contains("共识") || bodyLower.contains("guideline")) {
-            evidenceLevel = 3; // References official guidelines
+            evidenceLevel = 3;
+        }
+
+        // 【新增】内容过短检测
+        if (cleaned.content().length() < 300) {
+            evidenceLevel = 1;
+            log.warn("丁香医生文章 {} 内容过短 ({} 字符)，可能因动态渲染失败，证据等级降为1",
+                    cleaned.url(), cleaned.content().length());
         }
 
         return new ParsedMetadata(
