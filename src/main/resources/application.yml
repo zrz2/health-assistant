@@ -114,11 +114,28 @@ app:
       dingxiang:
         enabled: true
         max-articles: 8
+      # 新增来源
+      nhc:
+        enabled: true
+        max-articles: 15
+      medjournals:
+        enabled: true
+        max-articles: 10
+      medlive:
+        enabled: true
+        max-articles: 20
+      ahospital:
+        enabled: true
+        max-articles: 30
     # 证据分级（基于来源自动标注）
     evidence-defaults:
       WHO: 5
       中国疾控中心: 4
       丁香医生: 2
+      国家卫健委: 5
+      中华医学期刊网: 4
+      医脉通: 3
+      A+医学百科: 2
 
 # SpringDoc
 springdoc:
