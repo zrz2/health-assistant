@@ -65,86 +65,136 @@ public class EmbeddingPipelineService {
             return 0;
         }
 
-        // 2. Extract metadata from content (medical entities, section structure)
-        MetadataExtractor.ExtractedMetadata metadata = metadataExtractor.extract(
+        // 提取全文元数据（用于整个文档的全局信息，仍保留，但每个 chunk 可单独提取实体）
+        MetadataExtractor.ExtractedMetadata globalMetadata  = metadataExtractor.extract(
                 item.getContent(), item.getTitle(), item.getSourceName());
 
         // Use scraper-provided evidence level and document type if available;
         // otherwise calculate from content analysis
-        int evidenceLevel;
-        if (item.getEvidenceLevel() != null && item.getEvidenceLevel() > 0) {
-            evidenceLevel = item.getEvidenceLevel();
-        } else {
-            evidenceLevel = evidenceGradingService.calculateEvidenceLevel(
-                    metadata.documentType(), item.getPublicationDate(), item.getSourceName());
-        }
+        int evidenceLevel = resolveEvidenceLevel(item, globalMetadata);
+        String documentType = resolveDocumentType(item, globalMetadata);
 
-        String documentType;
-        if (item.getDocumentType() != null && !item.getDocumentType().isBlank()) {
-            documentType = item.getDocumentType();
-        } else {
-            documentType = metadata.documentType();
-        }
-
-        // 3. Embed and bulk index search chunks to ES
-        int indexed = 0;
-        List<BulkOperation> operations = new ArrayList<>();
+        // ---- 索引 search chunks ----
+        List<BulkOperation> searchOps = new ArrayList<>();
+        int indexedSearch = 0;
 
         for (TextChunker.Chunk chunk : chunks.searchChunks()) {
-            try {
-                float[] vector = embed(chunk.content());
-                if (vector == null) continue;
+            // 为每个 chunk 单独提取实体（可选，基于 chunk.content()）
+            MetadataExtractor.ExtractedMetadata chunkMetadata = metadataExtractor.extract(
+                    chunk.content(), item.getTitle(), item.getSourceName());
 
-                Map<String, Object> doc = buildEsDocument(chunk, item, metadata, evidenceLevel, documentType, vector);
-                operations.add(BulkOperation.of(op -> op
-                        .index(idx -> idx
-                                .index(indexName)
-                                .id(chunk.chunkId())
-                                .document(doc))));
-                indexed++;
+            float[] vector = embed(chunk.content());
+            if (vector == null) continue;
+
+            Map<String, Object> doc = buildEsDocumentForSearchChunk(
+                    chunk, item, chunkMetadata, evidenceLevel, documentType, vector);
+            searchOps.add(BulkOperation.of(op -> op
+                    .index(idx -> idx
+                            .index(indexName)
+                            .id(chunk.chunkId())
+                            .document(doc))));
+            indexedSearch++;
+        }
+
+        if (!searchOps.isEmpty()) {
+            try {
+                esClient.bulk(BulkRequest.of(b -> b.operations(searchOps)));
+                log.info("Indexed {} search chunks for doc {}", indexedSearch, item.getDocId());
             } catch (Exception e) {
-                log.error("Failed to embed chunk {}: {}", chunk.chunkId(), e.getMessage());
+                log.error("Search chunk indexing failed: {}", e.getMessage());
+                throw new RuntimeException("ES bulk indexing failed", e);
             }
         }
 
-        if (!operations.isEmpty()) {
+        // ---- 索引 parent chunks ----
+        List<BulkOperation> parentOps = new ArrayList<>();
+        int indexedParent = 0;
+        for (TextChunker.Chunk parentChunk : chunks.parentChunks()) {
+            // 父 chunk 不需要再向量化（或者也可以向量化，但通常不用于检索，只作为上下文扩展）
+            Map<String, Object> parentDoc = buildEsDocumentForParentChunk(parentChunk, item, globalMetadata, evidenceLevel, documentType);
+            parentOps.add(BulkOperation.of(op -> op
+                    .index(idx -> idx
+                            .index(indexName)
+                            .id(parentChunk.chunkId())
+                            .document(parentDoc))));
+            indexedParent++;
+        }
+
+        if (!parentOps.isEmpty()) {
             try {
-                esClient.bulk(BulkRequest.of(b -> b.operations(operations)));
-                log.info("Bulk indexed {} chunks for doc {}", indexed, item.getDocId());
+                esClient.bulk(BulkRequest.of(b -> b.operations(parentOps)));
+                log.info("Indexed {} parent chunks for doc {}", indexedParent, item.getDocId());
             } catch (Exception e) {
-                log.error("Bulk indexing failed for doc {}: {}", item.getDocId(), e.getMessage());
-                throw new RuntimeException("ES bulk indexing failed", e);
+                log.error("Parent chunk indexing failed: {}", e.getMessage());
+                // 不影响主流程，只记录
             }
         }
 
         // 4. Update knowledge item status
         item.setStatus(3); // indexed
-        item.setChunkCount(indexed);
+        item.setChunkCount(indexedSearch);
         item.setEvidenceLevel(evidenceLevel);
         item.setDocumentType(documentType);
         itemRepository.save(item);
 
-        log.info("Knowledge item {} indexed: {} chunks, evidence level {}",
-                item.getDocId(), indexed, evidenceLevel);
-        return indexed;
+        return indexedSearch;
     }
 
-    private Map<String, Object> buildEsDocument(TextChunker.Chunk chunk, KnowledgeItem item,
-                                                 MetadataExtractor.ExtractedMetadata metadata,
-                                                 int evidenceLevel, String documentType, float[] vector) {
+    // 新增方法：构建 search chunk 的 ES 文档
+    private Map<String, Object> buildEsDocumentForSearchChunk(TextChunker.Chunk chunk,
+                                                            KnowledgeItem item,
+                                                            MetadataExtractor.ExtractedMetadata chunkMetadata,
+                                                            int evidenceLevel,
+                                                            String documentType,
+                                                            float[] vector) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("content", chunk.content());
         doc.put("content_vector", vector);
         doc.put("section_path", chunk.sectionPath());
         doc.put("heading_level", chunk.headingLevel());
         doc.put("parent_doc_id", item.getDocId());
+        doc.put("parent_chunk_id", findParentChunkIdForSubChunk(chunk, item.getDocId())); // 根据 sectionPath 映射
+        doc.put("parent_content", chunk.parentContent());  // 关键：存储父全文
+        doc.put("chunk_index", chunk.chunkIndex());
+        doc.put("start_char", chunk.startChar());
+        doc.put("end_char", chunk.endChar());
         doc.put("document_type", documentType);
         doc.put("evidence_level", evidenceLevel);
-        doc.put("publication_date", item.getPublicationDate() != null
-                ? item.getPublicationDate().toString() : null);
+        doc.put("publication_date", item.getPublicationDate() != null ? item.getPublicationDate().toString() : null);
         doc.put("source_name", item.getSourceName());
-        doc.put("medical_entities", metadata.medicalEntities());
+        doc.put("medical_entities", chunkMetadata.medicalEntities());
+        doc.put("is_parent_chunk", false);
         return doc;
+    }
+
+    // 新增方法：构建 parent chunk 的 ES 文档（不包含向量，或可选包含）
+    private Map<String, Object> buildEsDocumentForParentChunk(TextChunker.Chunk parentChunk,
+                                                            KnowledgeItem item,
+                                                            MetadataExtractor.ExtractedMetadata globalMetadata,
+                                                            int evidenceLevel,
+                                                            String documentType) {
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("content", parentChunk.content());
+        // 可选：如果也想让父 chunk 可检索，可以生成向量，但通常没必要
+        // doc.put("content_vector", embed(parentChunk.content()));
+        doc.put("section_path", parentChunk.sectionPath());
+        doc.put("heading_level", parentChunk.headingLevel());
+        doc.put("parent_doc_id", item.getDocId());
+        doc.put("parent_chunk_id", parentChunk.chunkId());  // 自引用
+        doc.put("document_type", documentType);
+        doc.put("evidence_level", evidenceLevel);
+        doc.put("publication_date", item.getPublicationDate() != null ? item.getPublicationDate().toString() : null);
+        doc.put("source_name", item.getSourceName());
+        doc.put("medical_entities", globalMetadata.medicalEntities());
+        doc.put("is_parent_chunk", true);
+        return doc;
+    }
+
+    // 辅助方法：根据子块的 sectionPath 找到对应的父 chunk ID
+    private String findParentChunkIdForSubChunk(TextChunker.Chunk subChunk, String parentDocId) {
+        // 父 chunk ID 的生成规则：parentDocId + "_parent_" + sanitized(sectionPath)
+        String sanitized = subChunk.sectionPath().replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fff]", "_");
+        return parentDocId + "_parent_" + sanitized;
     }
 
     private float[] embed(String text) {

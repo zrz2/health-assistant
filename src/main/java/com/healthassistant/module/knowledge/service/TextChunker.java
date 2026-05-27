@@ -16,21 +16,28 @@ public class TextChunker {
     private static final int MIN_CHUNK_CHARS = 200;
     private static final int OVERLAP_CHARS = 80;
 
-    // Heading patterns for Chinese medical documents
+    // 中文标点句号、感叹号、问号、分号（作为句子边界）
+    private static final Pattern SENTENCE_BOUNDARY = Pattern.compile("[。！?；]\\s*");
+
+    // 标题匹配模式（保留原有）
     private static final Pattern[] HEADING_PATTERNS = {
-            Pattern.compile("^第[一二三四五六七八九十百]+章\\s*.*"),         // 第一章 xxx
-            Pattern.compile("^第[一二三四五六七八九十百]+节\\s*.*"),           // 第一节 xxx
-            Pattern.compile("^[一二三四五六七八九十]、\\s*(.+)"),              // 一、xxx
-            Pattern.compile("^[（(]\\s*[一二三四五六七八九十]\\s*[）)]\\s*(.+)"), // (一) xxx
-            Pattern.compile("^(\\d+)\\.(\\d+)\\s+(.+)"),                    // 1.1 xxx
-            Pattern.compile("^(\\d+)\\.\\s+(.+)"),                          // 1. xxx
-            Pattern.compile("^(\\d+)、\\s*(.+)"),                            // 1、xxx
-            Pattern.compile("^[（(]\\s*(\\d+)\\s*[）)]\\s*(.+)"),            // (1) xxx
-            Pattern.compile("^([A-Z])\\.\\s+(.+)"),                         // A. xxx
+            Pattern.compile("^第[一二三四五六七八九十百]+章\\s*.*"),
+            Pattern.compile("^第[一二三四五六七八九十百]+节\\s*.*"),
+            Pattern.compile("^[一二三四五六七八九十]、\\s*(.+)"),
+            Pattern.compile("^[（(]\\s*[一二三四五六七八九十]\\s*[）)]\\s*(.+)"),
+            Pattern.compile("^(\\d+)\\.(\\d+)\\s+(.+)"),
+            Pattern.compile("^(\\d+)\\.\\s+(.+)"),
+            Pattern.compile("^(\\d+)、\\s*(.+)"),
+            Pattern.compile("^[（(]\\s*(\\d+)\\s*[）)]\\s*(.+)"),
+            Pattern.compile("^([A-Z])\\.\\s+(.+)"),
     };
 
-    private static final Pattern BLANK_LINE = Pattern.compile("\\n\\s*\\n");
-
+    /**
+     * 切分医学文档
+     * @param document 完整正文
+     * @param parentDocId 知识条目ID
+     * @return 切分结果（包含 search chunks 和 parent chunks）
+     */
     public ChunkResult chunkByMedicalSections(String document, String parentDocId) {
         if (document == null || document.isBlank()) {
             return new ChunkResult(Collections.emptyList(), Collections.emptyList());
@@ -47,71 +54,43 @@ public class TextChunker {
             String sectionPath = section.path();
             int headingLevel = section.level();
 
-            if (sectionText.length() <= MAX_CHUNK_CHARS) {
-                // Section fits in one chunk
-                String chunkId = parentDocId + "_chunk_" + chunkIndex++;
-                searchChunks.add(new Chunk(chunkId, sectionText, sectionPath, headingLevel, parentDocId));
-            } else {
-                // Split long sections by paragraphs, with overlap
-                String[] paragraphs = sectionText.split("\\n\\s*\\n");
-                StringBuilder current = new StringBuilder();
-                int paraStart = 0;
+            // 1. 创建父 Chunk（完整章节，用于上下文扩展）
+            String parentChunkId = parentDocId + "_parent_" + sectionPath.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fff]", "_");
+            Chunk parentChunk = new Chunk(
+                    parentChunkId,
+                    sectionText,
+                    sectionPath,
+                    headingLevel,
+                    parentDocId,
+                    null,   // parentContent 为空，父 chunk 没有上层父内容
+                    -1,
+                    0,      // startChar
+                    sectionText.length()
+            );
+            parentChunks.add(parentChunk);
 
-                for (int i = 0; i < paragraphs.length; i++) {
-                    String para = paragraphs[i].trim();
-                    if (para.isEmpty()) continue;
-
-                    if (current.length() + para.length() > MAX_CHUNK_CHARS && current.length() >= MIN_CHUNK_CHARS) {
-                        String chunkId = parentDocId + "_chunk_" + chunkIndex++;
-                        searchChunks.add(new Chunk(chunkId, current.toString().trim(),
-                                sectionPath, headingLevel, parentDocId));
-                        // Keep last paragraph as overlap
-                        current.setLength(0);
-                        if (paraStart < i - 1) {
-                            String overlap = paragraphs[i - 1].trim();
-                            if (overlap.length() < OVERLAP_CHARS * 2) {
-                                current.append(overlap).append("\n\n");
-                            }
-                        }
-                    }
-                    current.append(para).append("\n\n");
-                }
-
-                if (!current.isEmpty()) {
-                    String chunkId = parentDocId + "_chunk_" + chunkIndex++;
-                    searchChunks.add(new Chunk(chunkId, current.toString().trim(),
-                            sectionPath, headingLevel, parentDocId));
-                }
-            }
-
-            // Parent chunk: whole section
-            if (sectionText.length() >= MIN_CHUNK_CHARS || !searchChunks.isEmpty()) {
-                String parentChunkId = parentDocId + "_parent_" + sectionPath.replaceAll("[^a-zA-Z0-9\\u4e00-\\u9fff]", "_");
-                parentChunks.add(new Chunk(parentChunkId, sectionText, sectionPath, headingLevel, parentDocId));
-            }
+            // 2. 创建检索子块（search chunks）
+            List<Chunk> subChunks = splitSectionToChunks(sectionText, parentDocId, sectionPath, headingLevel, parentChunkId, chunkIndex);
+            searchChunks.addAll(subChunks);
+            chunkIndex += subChunks.size();
         }
 
-        // Fallback: if no sections detected, chunk by paragraphs
+        // Fallback: 如果没有解析出任何章节，则按段落切分整个文档
         if (searchChunks.isEmpty()) {
-            chunkIndex = 0;
-            String[] paragraphs = document.split("\\n\\s*\\n");
-            StringBuilder current = new StringBuilder();
-            for (String para : paragraphs) {
-                para = para.trim();
-                if (para.isEmpty()) continue;
-                if (current.length() + para.length() > MAX_CHUNK_CHARS && current.length() >= MIN_CHUNK_CHARS) {
-                    String chunkId = parentDocId + "_chunk_" + chunkIndex++;
-                    searchChunks.add(new Chunk(chunkId, current.toString().trim(),
-                            "", 0, parentDocId));
-                    current.setLength(0);
-                }
-                current.append(para).append("\n\n");
-            }
-            if (!current.isEmpty()) {
-                String chunkId = parentDocId + "_chunk_" + chunkIndex++;
-                searchChunks.add(new Chunk(chunkId, current.toString().trim(),
-                        "", 0, parentDocId));
-            }
+            log.warn("No sections detected for doc {}, falling back to paragraph splitting", parentDocId);
+            Chunk fallbackParent = new Chunk(
+                    parentDocId + "_parent_full",
+                    document,
+                    "",
+                    0,
+                    parentDocId,
+                    null,
+                    -1,
+                    0,
+                    document.length()
+            );
+            parentChunks.add(fallbackParent);
+            searchChunks.addAll(splitPlainTextToChunks(document, parentDocId, fallbackParent.chunkId(), 0));
         }
 
         log.debug("Chunked doc {} into {} search chunks, {} parent chunks",
@@ -119,6 +98,149 @@ public class TextChunker {
         return new ChunkResult(searchChunks, parentChunks);
     }
 
+    /**
+     * 将一个章节切分成多个检索子块，每个子块携带父内容（当前章节完整文本）
+     */
+    private List<Chunk> splitSectionToChunks(String sectionText, String parentDocId,
+                                              String sectionPath, int headingLevel,
+                                              String parentChunkId, int startIndex) {
+        List<Chunk> chunks = new ArrayList<>();
+        if (sectionText.length() <= MAX_CHUNK_CHARS) {
+            // 单块章节：直接作为一个 search chunk
+            String chunkId = parentDocId + "_chunk_" + startIndex;
+            chunks.add(new Chunk(
+                    chunkId,
+                    sectionText,
+                    sectionPath,
+                    headingLevel,
+                    parentDocId,
+                    sectionText,  // parentContent 就是章节全文
+                    startIndex,
+                    0,
+                    sectionText.length()
+            ));
+            return chunks;
+        }
+
+        // 长章节：按句子边界切分，带重叠
+        List<String> sentences = splitIntoSentences(sectionText);
+        List<String> chunksText = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int lastCut = 0;
+
+        for (int i = 0; i < sentences.size(); i++) {
+            String sentence = sentences.get(i);
+            if (current.length() + sentence.length() > MAX_CHUNK_CHARS && current.length() >= MIN_CHUNK_CHARS) {
+                chunksText.add(current.toString().trim());
+                // 保留上一块的最后一个句子作为重叠
+                String lastSentence = sentences.get(i - 1);
+                current.setLength(0);
+                if (lastSentence.length() < OVERLAP_CHARS * 2) {
+                    current.append(lastSentence);
+                }
+            }
+            current.append(sentence);
+        }
+        if (!current.isEmpty()) {
+            chunksText.add(current.toString().trim());
+        }
+
+        // 为每个子块创建 Chunk 对象，携带父内容
+        int idx = 0;
+        int globalIdx = startIndex;
+        int charPos = 0;
+        for (String chunkText : chunksText) {
+            String chunkId = parentDocId + "_chunk_" + (globalIdx++);
+            // 近似计算起始位置（粗略，如需精确可改为基于原文索引）
+            int startChar = charPos;
+            int endChar = charPos + chunkText.length();
+            chunks.add(new Chunk(
+                    chunkId,
+                    chunkText,
+                    sectionPath,
+                    headingLevel,
+                    parentDocId,
+                    sectionText,   // 父内容 = 整个章节文本
+                    idx++,
+                    startChar,
+                    endChar
+            ));
+            charPos = endChar;
+        }
+        return chunks;
+    }
+
+    /**
+     * 纯文本切分（无标题结构时的后备）
+     */
+    private List<Chunk> splitPlainTextToChunks(String text, String parentDocId,
+                                                String parentChunkId, int startIndex) {
+        List<Chunk> chunks = new ArrayList<>();
+        List<String> sentences = splitIntoSentences(text);
+        StringBuilder current = new StringBuilder();
+        int chunkIdx = startIndex;
+        for (String sentence : sentences) {
+            if (current.length() + sentence.length() > MAX_CHUNK_CHARS && current.length() >= MIN_CHUNK_CHARS) {
+                String chunkId = parentDocId + "_chunk_" + (chunkIdx++);
+                chunks.add(new Chunk(
+                        chunkId,
+                        current.toString().trim(),
+                        "",
+                        0,
+                        parentDocId,
+                        text,   // 父内容就是整个文档
+                        chunkIdx - 1,
+                        0,
+                        current.length()
+                ));
+                current.setLength(0);
+            }
+            current.append(sentence);
+        }
+        if (!current.isEmpty()) {
+            String chunkId = parentDocId + "_chunk_" + (chunkIdx++);
+            chunks.add(new Chunk(
+                    chunkId,
+                    current.toString().trim(),
+                    "",
+                    0,
+                    parentDocId,
+                    text,
+                    chunkIdx - 1,
+                    0,
+                    current.length()
+            ));
+        }
+        return chunks;
+    }
+
+    /**
+     * 将文本按句子边界拆分（保留标点）
+     */
+    private List<String> splitIntoSentences(String text) {
+        List<String> sentences = new ArrayList<>();
+        Matcher m = SENTENCE_BOUNDARY.matcher(text);
+        int last = 0;
+        while (m.find()) {
+            String sentence = text.substring(last, m.end()).trim();
+            if (!sentence.isEmpty()) {
+                sentences.add(sentence);
+            }
+            last = m.end();
+        }
+        if (last < text.length()) {
+            String lastPart = text.substring(last).trim();
+            if (!lastPart.isEmpty()) {
+                sentences.add(lastPart);
+            }
+        }
+        if (sentences.isEmpty()) {
+            sentences.add(text);
+        }
+        return sentences;
+    }
+
+    // ------------------- 以下为原有的章节解析逻辑（保持不变） -------------------
     private List<Section> parseSections(String document) {
         List<Section> sections = new ArrayList<>();
         String[] lines = document.split("\\n");
@@ -129,14 +251,11 @@ public class TextChunker {
         for (String line : lines) {
             HeadingMatch match = matchHeading(line.trim());
             if (match != null) {
-                // Flush current section
                 if (!currentLines.isEmpty()) {
                     sections.add(new Section(String.join("\n", currentLines),
                             currentPath, currentLevel));
                 }
-                currentPath = currentPath.isEmpty()
-                        ? match.title()
-                        : currentPath + " > " + match.title();
+                currentPath = currentPath.isEmpty() ? match.title() : currentPath + " > " + match.title();
                 currentLevel = match.level();
                 currentLines = new ArrayList<>();
                 currentLines.add(line);
@@ -144,14 +263,10 @@ public class TextChunker {
                 currentLines.add(line);
             }
         }
-
-        // Flush last section
         if (!currentLines.isEmpty()) {
             sections.add(new Section(String.join("\n", currentLines),
-                    currentPath.isEmpty() ? "正文" : currentPath,
-                    currentLevel));
+                    currentPath.isEmpty() ? "正文" : currentPath, currentLevel));
         }
-
         return sections;
     }
 
@@ -167,8 +282,10 @@ public class TextChunker {
         return null;
     }
 
+    // ------------------- 记录类定义 -------------------
     public record Chunk(String chunkId, String content, String sectionPath,
-                        int headingLevel, String parentDocId) {}
+                        int headingLevel, String parentDocId, String parentContent,
+                        int chunkIndex, int startChar, int endChar) {}
 
     public record ChunkResult(List<Chunk> searchChunks, List<Chunk> parentChunks) {}
 

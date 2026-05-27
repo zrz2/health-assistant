@@ -12,6 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.HashMap;
+import java.util.Map;
+
 
 @Service
 public class KnowledgeService {
@@ -100,6 +104,18 @@ public class KnowledgeService {
         return count;
     }
 
+    public Map<String, Boolean> existsBySourceUrls(List<String> sourceUrls) {
+        List<String> existingUrls = itemRepository.findExistingSourceUrls(sourceUrls);
+        Map<String, Boolean> result = new HashMap<>();
+        if (sourceUrls == null || sourceUrls.isEmpty()) {
+            return new HashMap<>();
+        }
+        for (String url : sourceUrls) {
+            result.put(url, existingUrls.contains(url));
+        }
+        return result;
+    }
+
     public KnowledgeItem getByDocId(String docId) {
         return itemRepository.findByDocId(docId)
                 .orElseThrow(() -> new RuntimeException("Knowledge item not found: " + docId));
@@ -118,5 +134,9 @@ public class KnowledgeService {
 
     public long countByStatus(Integer status) {
         return itemRepository.countByStatus(status);
+    }
+
+    public boolean existsBySourceUrl(String sourceUrl) {
+        return itemRepository.findBySourceUrl(sourceUrl).isPresent();
     }
 }
